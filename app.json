@@ -2,11 +2,14 @@
   "expo": {
     "name": "CS2 Case Simulator",
     "slug": "cs2-case-simulator",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "splash": {
-      "backgroundColor": "#070A12"
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050914"
     },
     "ios": {
       "supportsTablet": true,
@@ -14,7 +17,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#070A12"
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#050914"
       },
       "package": "com.cs2casesimulator.app"
     }

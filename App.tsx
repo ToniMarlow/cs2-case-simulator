@@ -274,14 +274,10 @@ export default function App() {
                 style={styles.profileChip}
                 onPress={() => setActiveTab('profile')}
               >
-                <LinearGradient
-                  colors={['#38BDF8', '#6366F1']}
+                <Image
+                  source={require('./assets/icon.png')}
                   style={styles.avatarMini}
-                >
-                  <Text style={styles.avatarMiniText}>
-                    {user.nickname[0]?.toUpperCase() || 'P'}
-                  </Text>
-                </LinearGradient>
+                />
                 <View>
                   <Text style={styles.brandName}>{user.nickname}</Text>
                   <View

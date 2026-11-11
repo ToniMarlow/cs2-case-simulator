@@ -10,12 +10,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient as SvgGrad, Path, Stop } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { InventoryItem, RARITIES, RarityKey, SkinTemplate, ThemeMode } from '../types/cs2';
 import { INITIAL_CASES as CS2_CASES, getAllTemplates, instantiateSkin } from '../data/cs2Database';
-import { LiquidGlassCard, SkinCard, THEMES } from './LiquidGlassUI';
+import { SkinCard, THEMES } from './LiquidGlassUI';
 import { CaseBattleArena } from './CaseBattleArena';
 import { playClickSound, playLoseSound, playTickSound, playWinSound } from '../utils/soundManager';
 
@@ -59,12 +58,10 @@ interface PlayingCard {
 }
 
 interface GameLobbyCardInfo {
-  id: Exclude<MiniGameTab, 'lobby'>;
+  id: Exclude<MiniGameTab, 'lobby' | 'exchanger'>;
   title: string;
   subtitle: string;
-  badge: string;
-  colors: [string, string];
-  accent: string;
+  tag: string;
   icon: keyof typeof Ionicons.glyphMap;
   previewImg: string;
 }
@@ -73,81 +70,65 @@ const GAME_CARDS: GameLobbyCardInfo[] = [
   {
     id: 'casebattle',
     title: 'Битва Кейсов',
-    subtitle: 'Дуэли с ботами: Клатч, Терминал, Реверс и Общий банк',
-    badge: '🔥 ХИТ ОБНОВЛЕНИЯ',
-    colors: ['#7C2D12', '#EA580C'],
-    accent: '#F97316',
-    icon: 'trophy',
+    subtitle: 'Открытие кейсов против ботов: Клатч, Терминал, Реверс, Общий',
+    tag: '4 РЕЖИМА',
+    icon: 'trophy-outline',
     previewImg: CS2_CASES[0]?.image || '',
   },
   {
     id: 'crash',
-    title: 'Ракетка (Crash X)',
-    subtitle: 'Успей забрать ставку до взрыва графика (до x50)',
-    badge: '🚀 ИКСЫ ДО x50',
-    colors: ['#0C4A6E', '#0284C7'],
-    accent: '#38BDF8',
-    icon: 'rocket',
+    title: 'Краш (Crash)',
+    subtitle: 'Заберите выигрыш до обвала графика множителя',
+    tag: 'ДО x50',
+    icon: 'trending-up-outline',
     previewImg: CS2_CASES[1]?.items[0]?.image || '',
   },
   {
     id: 'upgrader',
-    title: 'Апгрейдер Скинов',
-    subtitle: 'Прокрути колесо шанса и преврати дешёвый скин в нож',
-    badge: '⚡ КРАФТ x1.5 — x10',
-    colors: ['#78350F', '#D97706'],
-    accent: '#FBBF24',
-    icon: 'sync-circle',
+    title: 'Апгрейдер',
+    subtitle: 'Улучшение скинов со склада с коэффициентом от x1.5 до x10',
+    tag: 'КРАФТ СКИНОВ',
+    icon: 'sync-outline',
     previewImg: CS2_CASES[0]?.items[CS2_CASES[0].items.length - 1]?.image || '',
   },
   {
-    id: 'mines',
-    title: 'Сапёр CS2 (Мины 5x5)',
-    subtitle: 'Открывай ячейки с кристаллами и обходи бомбы C4',
-    badge: '💣 РИСК И КУШ',
-    colors: ['#4C1D95', '#7C3AED'],
-    accent: '#A855F7',
-    icon: 'grid',
-    previewImg: CS2_CASES[2]?.image || '',
-  },
-  {
     id: 'tradeup',
-    title: 'Контракт Обмена',
-    subtitle: 'Обменяй 5 скинов одной редкости на скин рангом выше',
-    badge: '📜 5 В 1 КРАФТ',
-    colors: ['#831843', '#DB2777'],
-    accent: '#F472B6',
-    icon: 'layers',
+    title: 'Контракт обмена',
+    subtitle: 'Обмен 5 скинов одной редкости на предмет качеством выше',
+    tag: '5 В 1',
+    icon: 'layers-outline',
     previewImg: CS2_CASES[3]?.items[2]?.image || '',
   },
   {
+    id: 'mines',
+    title: 'Сапёр 5x5',
+    subtitle: 'Поле из 25 ячеек: открывайте кристаллы и обходите мины',
+    tag: 'МИНЫ C4',
+    icon: 'grid-outline',
+    previewImg: CS2_CASES[2]?.image || '',
+  },
+  {
     id: 'coinflip',
-    title: 'Монетка (CT vs T)',
-    subtitle: 'Выбери сторону Спецназа или Террористов и удвой баланс',
-    badge: '🪙 ШАНС 50/50',
-    colors: ['#1E3A8A', '#2563EB'],
-    accent: '#60A5FA',
-    icon: 'disc',
+    title: 'Монетка CT / T',
+    subtitle: 'Классическая дуэль 50 на 50 за сторону Спецназа или Террористов',
+    tag: 'x1.94',
+    icon: 'disc-outline',
     previewImg: CS2_CASES[4]?.image || '',
   },
   {
     id: 'blackjack',
     title: 'Блэкджек 21',
-    subtitle: 'Классическая карточная дуэль против дилера казино CS2',
-    badge: '🃏 КАРТЫ 21',
-    colors: ['#064E3B', '#059669'],
-    accent: '#34D399',
-    icon: 'albums',
+    subtitle: 'Наберите 21 очко картами и обыграйте дилера',
+    tag: 'КАРТЫ',
+    icon: 'albums-outline',
     previewImg: CS2_CASES[5]?.image || '',
   },
   {
     id: 'clicker',
-    title: 'Цех Сборки Кейсов',
-    subtitle: 'Подработка при банкротстве (+$0.50 за клик) + Размен скинов',
-    badge: '🛠️ АНТИ-БАНКРОТ',
-    colors: ['#1E293B', '#334155'],
-    accent: '#38BDF8',
-    icon: 'hammer',
+    title: 'Цех и Магазин',
+    subtitle: 'Заработок +$0.50 за клик при нулевом балансе и покупка скинов',
+    tag: 'ПОДРАБОТКА',
+    icon: 'hammer-outline',
     previewImg: CS2_CASES[6]?.image || '',
   },
 ];
@@ -155,7 +136,7 @@ const GAME_CARDS: GameLobbyCardInfo[] = [
 export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   balance,
   inventory,
-  themeMode = 'bright',
+  themeMode = 'obsidian',
   defaultFastSpin = false,
   initialGame = 'lobby',
   onChangeBalance,
@@ -167,7 +148,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   onNotify,
 }) => {
   const [activeGame, setActiveGame] = useState<MiniGameTab>(initialGame);
-  const theme = THEMES[themeMode] || THEMES.bright;
+  const theme = THEMES[themeMode] || THEMES.obsidian;
 
   useEffect(() => {
     if (initialGame && initialGame !== 'lobby') {
@@ -180,13 +161,27 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     message: string,
     type: 'error' | 'warning' | 'success' | 'info' | 'reward' = 'info'
   ) => {
-    if (onNotify) {
-      onNotify(title, message, type);
-    }
+    if (onNotify) onNotify(title, message, type);
   };
 
-  // ==================== 1. CRASH (РАКЕТКА С ГРАФИКОМ) ====================
-  const [crashBet, setCrashBet] = useState('10');
+  const applyQuickBet = (
+    currentStr: string,
+    setter: (val: string) => void,
+    action: '1' | '5' | '10' | 'half' | 'double' | 'max'
+  ) => {
+    playClickSound();
+    const cur = Number(currentStr) || 1;
+    if (action === '1') setter('1');
+    else if (action === '5') setter('5');
+    else if (action === '10') setter('10');
+    else if (action === 'half') setter(Math.max(1, Number((cur / 2).toFixed(2))).toString());
+    else if (action === 'double')
+      setter(Math.min(Math.max(1, balance), Number((cur * 2).toFixed(2))).toString());
+    else if (action === 'max') setter(Math.max(1, Number(balance.toFixed(2))).toString());
+  };
+
+  // ==================== 1. CRASH ====================
+  const [crashBet, setCrashBet] = useState('5');
   const [crashRunning, setCrashRunning] = useState(false);
   const [crashMultiplier, setCrashMultiplier] = useState(1.0);
   const [crashBusted, setCrashBusted] = useState(false);
@@ -203,16 +198,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 
   const startCrash = () => {
     const bet = Number(crashBet);
-    if (isNaN(bet) || bet <= 0) {
-      notify('Некорректная ставка', 'Введите положительную сумму ставки в долларах.', 'warning');
-      return;
-    }
-    if (bet > balance) {
-      notify(
-        'Недостаточно средств на балансе',
-        `Для запуска Ракетки нужно $${bet.toFixed(2)}, а у вас $${balance.toFixed(2)}.`,
-        'error'
-      );
+    if (isNaN(bet) || bet <= 0 || bet > balance) {
+      notify('Недостаточно средств', `Проверьте сумму ставки (ваш баланс $${balance.toFixed(2)}).`, 'error');
       return;
     }
     onChangeBalance(-bet);
@@ -221,7 +208,6 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     setCashedOutAt(null);
     setCrashMultiplier(1.0);
 
-    // Tougher house edge so players can lose money if greedy
     const r = Math.random();
     const crashPoint =
       r < 0.14 ? 1.01 : Number(Math.max(1.03, 0.91 / (1 - r)).toFixed(2));
@@ -236,7 +222,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
         setCrashMultiplier(finalPoint);
         setCrashRunning(false);
         setCrashBusted(true);
-        setCrashHistory((prev) => [finalPoint, ...prev.slice(0, 6)]);
+        setCrashHistory((prev) => [finalPoint, ...prev.slice(0, 5)]);
         playLoseSound();
       } else {
         setCrashMultiplier(current);
@@ -252,19 +238,18 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     const lockedMult = crashMultiplier;
     setCashedOutAt(lockedMult);
     setCrashRunning(false);
-    setCrashHistory((prev) => [lockedMult, ...prev.slice(0, 6)]);
+    setCrashHistory((prev) => [lockedMult, ...prev.slice(0, 5)]);
     onChangeBalance(winAmount);
     onRecordGameWin(false);
     playWinSound();
-    notify('Выигрыш в Ракетке!', `Вы забрали $${winAmount.toFixed(2)} на коэффициенте ${lockedMult.toFixed(2)}x!`, 'reward');
   };
 
   const crashProgress = Math.min(1, Math.log10(Math.max(1, crashMultiplier)) / 1.3);
   const rocketX = 24 + crashProgress * 290;
-  const rocketY = 140 - Math.pow(crashProgress, 1.35) * 108;
-  const curvePath = `M 24 140 Q ${24 + crashProgress * 160} 140 ${rocketX} ${rocketY}`;
+  const rocketY = 135 - Math.pow(crashProgress, 1.35) * 100;
+  const curvePath = `M 24 135 Q ${24 + crashProgress * 160} 135 ${rocketX} ${rocketY}`;
 
-  // ==================== 2. UPGRADER (КРУГОВОЕ КОЛЕСО) ====================
+  // ==================== 2. UPGRADER ====================
   const [selectedUpgradeSkin, setSelectedUpgradeSkin] = useState<InventoryItem | null>(null);
   const [upgradeMultiplier, setUpgradeMultiplier] = useState<1.5 | 2 | 5 | 10>(2);
   const [isWheelSpinning, setIsWheelSpinning] = useState(false);
@@ -285,7 +270,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   const runUpgrade = () => {
     if (isWheelSpinning) return;
     if (!selectedUpgradeSkin) {
-      notify('Скин не выбран', 'Выберите предмет со своего склада внизу для апгрейда.', 'warning');
+      notify('Выберите скин', 'Нажмите на любой предмет со склада ниже.', 'warning');
       return;
     }
 
@@ -308,7 +293,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 
     Animated.timing(wheelAngleAnim, {
       toValue: finalAngle,
-      duration: defaultFastSpin ? 1800 : 3600,
+      duration: defaultFastSpin ? 1600 : 3200,
       easing: Easing.bezier(0.12, 0.85, 0.2, 1),
       useNativeDriver: true,
     }).start(() => {
@@ -329,29 +314,23 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
         onAddInventoryItem(upgraded);
         setSelectedUpgradeSkin(upgraded);
         setUpgradeResultMsg({
-          text: `УСПЕХ! Выпал ${upgraded.weapon} | ${upgraded.name} ($${upgraded.price})`,
+          text: `Успех! Получен ${upgraded.weapon} | ${upgraded.name} ($${upgraded.price})`,
           win: true,
         });
         onRecordGameWin(true);
         playWinSound();
-        notify(
-          'Апгрейд успешен!',
-          `Вы улучшили скин до ${upgraded.weapon} | ${upgraded.name} ($${upgraded.price.toFixed(2)})`,
-          'reward'
-        );
       } else {
         setSelectedUpgradeSkin(null);
         setUpgradeResultMsg({
-          text: 'НЕУДАЧА! Скин сгорел при попытке улучшения.',
+          text: 'Неудача: стрелка остановилась вне сектора успеха.',
           win: false,
         });
         playLoseSound();
-        notify('Апгрейд не удался', 'Бегунок остановился мимо зелёного сектора. Скин утерян.', 'warning');
       }
     });
   };
 
-  const wheelRadius = 76;
+  const wheelRadius = 68;
   const wheelCircumference = 2 * Math.PI * wheelRadius;
   const strokeDashoffset = wheelCircumference * (1 - winChance / 100);
   const pointerRotate = wheelAngleAnim.interpolate({
@@ -359,9 +338,9 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     outputRange: ['0deg', '360deg'],
   });
 
-  // ==================== 3. MINES (МИНЫ 5x5) ====================
-  const [minesBet, setMinesBet] = useState('10');
-  const [minesCount, setMinesCount] = useState(4);
+  // ==================== 3. MINES ====================
+  const [minesBet, setMinesBet] = useState('5');
+  const [minesCount, setMinesCount] = useState(3);
   const [minesActive, setMinesActive] = useState(false);
   const [minePositions, setMinePositions] = useState<number[]>([]);
   const [revealedCells, setRevealedCells] = useState<number[]>([]);
@@ -370,11 +349,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   const startMines = () => {
     const bet = Number(minesBet);
     if (isNaN(bet) || bet <= 0 || bet > balance) {
-      notify(
-        'Недостаточно средств',
-        `Для старта игры в Мины нужно $${bet > 0 ? bet.toFixed(2) : '1.00'}, ваш баланс: $${balance.toFixed(2)}.`,
-        'error'
-      );
+      notify('Недостаточно средств', 'Проверьте сумму ставки.', 'error');
       return;
     }
     onChangeBalance(-bet);
@@ -395,7 +370,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     for (let i = 0; i < revealedCells.length; i++) {
       mult *= (25 - i) / (25 - minesCount - i);
     }
-    return Number((mult * 0.94).toFixed(2));
+    return Number((mult * 0.95).toFixed(2));
   };
 
   const pressMineCell = (idx: number) => {
@@ -405,10 +380,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
       setMinesGameOver(true);
       setMinesActive(false);
       playLoseSound();
-      notify('Взрыв на мине!', 'Вы наткнулись на бомбу C4 и потеряли ставку.', 'error');
     } else {
-      const next = [...revealedCells, idx];
-      setRevealedCells(next);
+      setRevealedCells([...revealedCells, idx]);
       playWinSound();
     }
   };
@@ -421,11 +394,10 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     setMinesGameOver(true);
     onRecordGameWin(false);
     playWinSound();
-    notify('Куш в Минах забран!', `На ваш баланс зачислено +$${win.toFixed(2)}`, 'reward');
   };
 
-  // ==================== 4. COINFLIP (CT vs T) ====================
-  const [coinBet, setCoinBet] = useState('15');
+  // ==================== 4. COINFLIP ====================
+  const [coinBet, setCoinBet] = useState('5');
   const [coinSide, setCoinSide] = useState<'CT' | 'T'>('CT');
   const [coinFlipping, setCoinFlipping] = useState(false);
   const [coinLanded, setCoinLanded] = useState<'CT' | 'T'>('CT');
@@ -436,11 +408,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     if (coinFlipping) return;
     const bet = Number(coinBet);
     if (isNaN(bet) || bet <= 0 || bet > balance) {
-      notify(
-        'Недостаточно средств',
-        `Для броска монетки требуется $${bet > 0 ? bet.toFixed(2) : '1.00'}.`,
-        'error'
-      );
+      notify('Недостаточно средств', 'Проверьте сумму ставки.', 'error');
       return;
     }
     onChangeBalance(-bet);
@@ -452,7 +420,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 
     Animated.timing(coinFlipAnim, {
       toValue: 1,
-      duration: defaultFastSpin ? 750 : 1400,
+      duration: defaultFastSpin ? 700 : 1300,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
@@ -461,11 +429,11 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
       if (outcome === coinSide) {
         const prize = Number((bet * 1.94).toFixed(2));
         onChangeBalance(prize);
-        setCoinResult({ text: `ВЫПАЛО ${outcome}! ПОБЕДА +$${prize}`, win: true });
+        setCoinResult({ text: `Выпало ${outcome} • Выигрыш +$${prize}`, win: true });
         onRecordGameWin(false);
         playWinSound();
       } else {
-        setCoinResult({ text: `ВЫПАЛО ${outcome}! ПРОИГРЫШ -$${bet}`, win: false });
+        setCoinResult({ text: `Выпало ${outcome} • Проигрыш -$${bet}`, win: false });
         playLoseSound();
       }
     });
@@ -476,8 +444,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     outputRange: [1, -1, 1, -1, 1],
   });
 
-  // ==================== 5. BLACKJACK 21 ====================
-  const [bjBet, setBjBet] = useState('15');
+  // ==================== 5. BLACKJACK ====================
+  const [bjBet, setBjBet] = useState('5');
   const [playerHand, setPlayerHand] = useState<PlayingCard[]>([]);
   const [dealerHand, setDealerHand] = useState<PlayingCard[]>([]);
   const [bjActive, setBjActive] = useState(false);
@@ -518,7 +486,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   const startBlackjack = () => {
     const bet = Number(bjBet);
     if (isNaN(bet) || bet <= 0 || bet > balance) {
-      notify('Недостаточно средств', 'Пополните баланс в Цехе Сборки или продайте скины.', 'error');
+      notify('Недостаточно средств', 'Проверьте сумму ставки.', 'error');
       return;
     }
     onChangeBalance(-bet);
@@ -536,7 +504,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     playTickSound();
     if (handSum(next) > 21) {
       setBjActive(false);
-      setBjStatus('Перебор (>21)! Дилер забирает банк.');
+      setBjStatus('Перебор (>21) • Победа дилера');
       playLoseSound();
     }
   };
@@ -557,14 +525,14 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     if (dScore > 21 || pScore > dScore) {
       const win = Number((bet * 2).toFixed(2));
       onChangeBalance(win);
-      setBjStatus(`Победа! (${pScore} против ${dScore}) +$${win}`);
+      setBjStatus(`Победа (${pScore} : ${dScore}) • Выигрыш +$${win}`);
       onRecordGameWin(false);
       playWinSound();
     } else if (pScore === dScore) {
       onChangeBalance(bet);
-      setBjStatus(`Ничья (${pScore}:${dScore}) • Возврат ставки`);
+      setBjStatus(`Ничья (${pScore} : ${dScore}) • Возврат ставки`);
     } else {
-      setBjStatus(`Дилер победил (${dScore} против ${pScore})`);
+      setBjStatus(`Дилер выиграл (${dScore} : ${pScore})`);
       playLoseSound();
     }
   };
@@ -575,7 +543,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 
   const toggleContractSkin = (item: InventoryItem) => {
     if (item.rarity === 'gold') {
-      notify('Недоступно для Контракта', 'Ножи и перчатки нельзя использовать в контракте обмена.', 'warning');
+      notify('Недоступно', 'Ножи и перчатки не участвуют в контрактах.', 'warning');
       return;
     }
     if (contractIds.includes(item.instanceId)) {
@@ -583,13 +551,13 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
       return;
     }
     if (contractIds.length >= 5) {
-      notify('Слоты заполнены', 'В контракте уже выбрано 5 предметов.', 'info');
+      notify('5 слотов заняты', 'Сначала уберите один предмет из слота.', 'info');
       return;
     }
     if (contractIds.length > 0) {
       const firstItem = inventory.find((i) => i.instanceId === contractIds[0]);
       if (firstItem && firstItem.rarity !== item.rarity) {
-        notify('Разная редкость', 'Все 5 скинов в контракте должны быть одной редкости!', 'warning');
+        notify('Разная редкость', 'Все 5 скинов должны быть одного качества.', 'warning');
         return;
       }
     }
@@ -598,7 +566,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 
   const executeTradeUp = () => {
     if (contractIds.length < 5) {
-      notify('Заполните 5 слотов', 'Выберите 5 скинов одной редкости со склада снизу.', 'warning');
+      notify('Нужно 5 предметов', 'Выберите 5 скинов одной редкости со склада ниже.', 'warning');
       return;
     }
     const items = inventory.filter((i) => contractIds.includes(i.instanceId));
@@ -613,19 +581,17 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     const pool = getAllTemplates().filter((t) => t.rarity === nextRarity && !t.isSticker);
     const chosen = pool[Math.floor(Math.random() * pool.length)] || getAllTemplates()[0];
     const crafted = instantiateSkin(chosen);
-    // Realistic trade-up value (0.65x to 1.45x of input value)
     crafted.price = Number((totalInputVal * (0.65 + Math.random() * 0.8)).toFixed(2));
 
     onRemoveInventoryItems(contractIds);
     onAddInventoryItem(crafted);
     setContractIds([]);
-    setContractMessage(`КРАФТ УСПЕШЕН: ${crafted.weapon} | ${crafted.name} ($${crafted.price})`);
+    setContractMessage(`Получен: ${crafted.weapon} | ${crafted.name} ($${crafted.price})`);
     onRecordGameWin(false);
     playWinSound();
-    notify('Контракт подписан!', `Получен ${crafted.weapon} | ${crafted.name} ($${crafted.price.toFixed(2)})`, 'reward');
   };
 
-  // ==================== 7. BANKRUPTCY CLICKER & EXCHANGER ====================
+  // ==================== 7. CLICKER & SHOP ====================
   const [clickCount, setClickCount] = useState(0);
   const allShopSkins = getAllTemplates();
 
@@ -637,11 +603,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 
   const buyFromExchanger = (template: SkinTemplate) => {
     if (balance < template.basePrice) {
-      notify(
-        'Недостаточно средств',
-        `Для покупки ${template.weapon} | ${template.name} нужно $${template.basePrice.toFixed(2)}`,
-        'error'
-      );
+      notify('Недостаточно средств', `Нужно $${template.basePrice.toFixed(2)}`, 'error');
       return;
     }
     onChangeBalance(-template.basePrice);
@@ -649,82 +611,68 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     created.price = Number(template.basePrice.toFixed(2));
     onAddInventoryItem(created);
     playWinSound();
-    notify('Покупка выполнена!', `${created.weapon} | ${created.name} добавлен на ваш склад.`, 'success');
+    notify('Куплено', `${created.weapon} | ${created.name} добавлен на склад.`, 'success');
   };
 
   const selectedContractItems = contractIds
     .map((id) => inventory.find((i) => i.instanceId === id))
     .filter(Boolean) as InventoryItem[];
 
-  // ==================== LOBBY VIEW (БЛОКИ ИГР С КАРТИНКАМИ И НАЗВАНИЯМИ) ====================
+  // ==================== CLEAN MINIMALIST LOBBY ====================
   if (activeGame === 'lobby') {
     return (
       <View style={styles.container}>
-        <LiquidGlassCard themeMode={themeMode} style={styles.lobbyHeroBanner}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.lobbyTag, { color: theme.accent }]}>
-              🎮 ИГРОВОЙ ЗАЛ CS2 • ВЫБЕРИТЕ РЕЖИМ
-            </Text>
-            <Text style={[styles.lobbyHeroTitle, { color: theme.textPrimary }]}>
-              МИНИ-ИГРЫ И БИТВА КЕЙСОВ
-            </Text>
-            <Text style={[styles.lobbyHeroSub, { color: theme.textSecondary }]}>
-              Нажмите на любую карточку игры ниже, чтобы войти и испытать удачу!
-            </Text>
-          </View>
-        </LiquidGlassCard>
-
+        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+          Игровые режимы
+        </Text>
         <View style={styles.lobbyGrid}>
           {GAME_CARDS.map((card) => (
             <TouchableOpacity
               key={card.id}
-              activeOpacity={0.88}
+              activeOpacity={0.85}
               onPress={() => {
                 playClickSound();
                 setActiveGame(card.id);
               }}
               style={[
-                styles.gameBlockCard,
-                { borderColor: `${card.accent}66` },
+                styles.lobbyCard,
+                {
+                  backgroundColor: theme.cardBg,
+                  borderColor: theme.cardBorder,
+                },
               ]}
             >
-              <LinearGradient
-                colors={card.colors}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-
-              {/* Top Badge */}
-              <View style={styles.blockTopRow}>
-                <View style={styles.blockBadgePill}>
-                  <Text style={styles.blockBadgeText}>{card.badge}</Text>
+              <View style={styles.lobbyCardTop}>
+                <View style={[styles.tagPill, { backgroundColor: theme.surfaceBg }]}>
+                  <Text style={[styles.tagPillText, { color: theme.textSecondary }]}>
+                    {card.tag}
+                  </Text>
                 </View>
-                <Ionicons name={card.icon} size={18} color="#FFFFFF" />
+                <Ionicons name={card.icon} size={17} color={theme.textSecondary} />
               </View>
 
-              {/* Game Artwork Preview */}
-              <View style={styles.blockArtworkWrap}>
+              <View style={styles.lobbyImgWrap}>
                 {card.previewImg ? (
                   <Image
                     source={{ uri: card.previewImg }}
-                    style={styles.blockArtworkImg}
+                    style={styles.lobbyImg}
                     resizeMode="contain"
                   />
                 ) : (
-                  <Ionicons name={card.icon} size={48} color="#FFFFFF" />
+                  <Ionicons name={card.icon} size={42} color={theme.textSecondary} />
                 )}
               </View>
 
-              {/* Title & Description */}
               <View>
-                <Text style={styles.blockTitle}>{card.title}</Text>
-                <Text numberOfLines={2} style={styles.blockSubtitle}>
+                <Text style={[styles.lobbyCardTitle, { color: theme.textPrimary }]}>
+                  {card.title}
+                </Text>
+                <Text
+                  numberOfLines={2}
+                  style={[styles.lobbyCardSub, { color: theme.textSecondary }]}
+                >
                   {card.subtitle}
                 </Text>
-                <View style={styles.blockPlayBtn}>
-                  <Text style={styles.blockPlayBtnText}>ИГРАТЬ →</Text>
-                </View>
               </View>
             </TouchableOpacity>
           ))}
@@ -733,7 +681,6 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     );
   }
 
-  // ==================== CASE BATTLE ARENA ====================
   if (activeGame === 'casebattle') {
     return (
       <CaseBattleArena
@@ -742,11 +689,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
         defaultFastSpin={defaultFastSpin}
         onUpdateBalance={onChangeBalance}
         onAddItems={(items) => {
-          if (onAddMultipleItems) {
-            onAddMultipleItems(items);
-          } else {
-            items.forEach((i) => onAddInventoryItem(i));
-          }
+          if (onAddMultipleItems) onAddMultipleItems(items);
+          else items.forEach((i) => onAddInventoryItem(i));
         }}
         onNotify={notify}
         onBattlePlayed={onRecordBattlePlayed}
@@ -755,184 +699,268 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     );
   }
 
-  // ==================== INDIVIDUAL GAME VIEWS ====================
+  const renderQuickBetBar = (
+    val: string,
+    setter: (v: string) => void,
+    disabled = false
+  ) => (
+    <View style={styles.betSection}>
+      <View style={styles.betInputRow}>
+        <Text style={[styles.betLabel, { color: theme.textSecondary }]}>Ставка ($)</Text>
+        <TextInput
+          value={val}
+          onChangeText={setter}
+          keyboardType="numeric"
+          editable={!disabled}
+          style={[
+            styles.betInput,
+            {
+              backgroundColor: theme.surfaceBg,
+              color: theme.textPrimary,
+              borderColor: theme.cardBorder,
+            },
+          ]}
+        />
+      </View>
+      <View style={styles.quickBetPills}>
+        {(
+          [
+            { id: '1', label: '$1' },
+            { id: '5', label: '$5' },
+            { id: '10', label: '$10' },
+            { id: 'half', label: '1/2' },
+            { id: 'double', label: 'x2' },
+            { id: 'max', label: 'MAX' },
+          ] as const
+        ).map((b) => (
+          <TouchableOpacity
+            key={b.id}
+            disabled={disabled}
+            onPress={() => applyQuickBet(val, setter, b.id)}
+            style={[styles.quickBetBtn, { backgroundColor: theme.surfaceBg }]}
+          >
+            <Text style={[styles.quickBetBtnText, { color: theme.textSecondary }]}>
+              {b.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
-      {/* Back to Game Hall Header */}
-      <View style={styles.insideGameTopBar}>
+      {/* Unified Clean Top Game Header */}
+      <View
+        style={[
+          styles.gameTopHeader,
+          { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+        ]}
+      >
         <TouchableOpacity
-          style={styles.backToLobbyBtn}
+          style={[styles.backBtn, { backgroundColor: theme.surfaceBg }]}
           onPress={() => {
             playClickSound();
             setActiveGame('lobby');
           }}
         >
-          <Ionicons name="arrow-back" size={18} color="#0284C7" />
-          <Text style={styles.backToLobbyText}>← Назад в Игровой Зал</Text>
+          <Ionicons name="arrow-back" size={16} color={theme.textPrimary} />
+          <Text style={[styles.backBtnText, { color: theme.textPrimary }]}>Все игры</Text>
         </TouchableOpacity>
+
+        <Text style={[styles.gameHeaderTitle, { color: theme.textPrimary }]}>
+          {GAME_CARDS.find((g) => g.id === activeGame)?.title || 'Игра'}
+        </Text>
+
+        <View style={{ width: 68 }} />
       </View>
 
       {/* ==================== 1. CRASH ==================== */}
       {activeGame === 'crash' && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(56, 189, 248, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <View style={styles.gameHeaderRow}>
-            <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>
-              🚀 РАКЕТКА (CRASH X)
-            </Text>
-            <View style={styles.historyRow}>
-              {crashHistory.slice(0, 4).map((h, i) => (
-                <View
-                  key={i}
+          <View style={styles.historyRow}>
+            {crashHistory.map((h, i) => (
+              <View
+                key={i}
+                style={[styles.histPill, { backgroundColor: theme.surfaceBg }]}
+              >
+                <Text
                   style={[
-                    styles.histPill,
-                    { borderColor: h >= 2 ? '#10B981' : '#64748B' },
+                    styles.histText,
+                    { color: h >= 2 ? '#16A34A' : theme.textSecondary },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.histText,
-                      { color: h >= 2 ? '#34D399' : '#94A3B8' },
-                    ]}
-                  >
-                    {h.toFixed(2)}x
-                  </Text>
-                </View>
-              ))}
-            </View>
+                  {h.toFixed(2)}x
+                </Text>
+              </View>
+            ))}
           </View>
 
-          <View style={[styles.crashDisplay, crashBusted && styles.crashDisplayBusted]}>
-            <Svg width="340" height="155" style={StyleSheet.absoluteFillObject}>
-              <Defs>
-                <SvgGrad id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                  <Stop offset="0" stopColor="#38BDF8" stopOpacity="0.3" />
-                  <Stop
-                    offset="1"
-                    stopColor={crashBusted ? '#EF4444' : '#00F5A0'}
-                    stopOpacity="1"
-                  />
-                </SvgGrad>
-              </Defs>
+          <View
+            style={[
+              styles.crashStage,
+              {
+                backgroundColor: theme.surfaceBg,
+                borderColor: crashBusted ? '#EF4444' : theme.cardBorder,
+              },
+            ]}
+          >
+            <Svg width="340" height="145" style={StyleSheet.absoluteFillObject}>
               <Path
                 d={curvePath}
-                stroke="url(#lineGrad)"
-                strokeWidth="4"
+                stroke={crashBusted ? '#EF4444' : '#16A34A'}
+                strokeWidth="3"
                 fill="none"
               />
               <Circle
                 cx={rocketX}
                 cy={rocketY}
-                r="6"
-                fill={crashBusted ? '#EF4444' : '#00F5A0'}
+                r="5"
+                fill={crashBusted ? '#EF4444' : '#16A34A'}
               />
             </Svg>
 
-            <Text style={[styles.crashMultText, crashBusted && { color: '#EF4444' }]}>
+            <Text
+              style={[
+                styles.crashBigNumber,
+                { color: crashBusted ? '#EF4444' : theme.textPrimary },
+              ]}
+            >
               {crashMultiplier.toFixed(2)}x
             </Text>
-            <Text style={styles.crashStateText}>
+            <Text style={[styles.crashSubStatus, { color: theme.textSecondary }]}>
               {crashBusted
-                ? '💥 ВЗРЫВ РАКЕТЫ! СТАВКА СГОРЕЛА'
+                ? 'График обрушился'
                 : cashedOutAt
-                ? `✅ ЗАБРАНО НА ${cashedOutAt.toFixed(2)}x`
+                ? `Выигрыш забран на ${cashedOutAt.toFixed(2)}x`
                 : crashRunning
-                ? '🚀 НАБИРАЕТ ВЫСОТУ...'
-                : 'СДЕЛАЙТЕ СТАВКУ ДЛЯ СТАРТА'}
+                ? 'Множитель растёт...'
+                : 'Готов к запуску'}
             </Text>
           </View>
 
-          <View style={styles.inputRow}>
-            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ставка ($):</Text>
-            <TextInput
-              value={crashBet}
-              onChangeText={setCrashBet}
-              keyboardType="numeric"
-              editable={!crashRunning}
-              style={[styles.betInput, { color: theme.textPrimary }]}
-            />
-          </View>
+          {renderQuickBetBar(crashBet, setCrashBet, crashRunning)}
 
           {!crashRunning ? (
-            <TouchableOpacity style={styles.primaryActionBtn} onPress={startCrash}>
-              <Text style={styles.primaryActionText}>ЗАПУСТИТЬ РАКЕТКУ</Text>
+            <TouchableOpacity style={styles.greenActionBtn} onPress={startCrash}>
+              <Text style={styles.greenActionText}>НАЧАТЬ РАУНД</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.primaryActionBtn, { backgroundColor: '#10B981' }]}
+              style={[styles.greenActionBtn, { backgroundColor: '#EAB308' }]}
               onPress={cashOutCrash}
             >
-              <Text style={styles.primaryActionText}>
+              <Text style={[styles.greenActionText, { color: '#111827' }]}>
                 ЗАБРАТЬ ${(Number(crashBet) * crashMultiplier).toFixed(2)}
               </Text>
             </TouchableOpacity>
           )}
-        </LiquidGlassCard>
+        </View>
       )}
 
-      {/* ==================== 2. UPGRADER ==================== */}
+      {/* ==================== 2. UPGRADER (WITH 2-COLUMN INVENTORY GRID) ==================== */}
       {activeGame === 'upgrader' && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(245, 158, 11, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>
-            ⚡ АПГРЕЙДЕР СКИНОВ
-          </Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Попадите стрелкой в зелёную дугу круга, чтобы улучшить выбранный скин!
-          </Text>
+          {/* Two Top Slots: Current Skin -> Target Value */}
+          <View style={styles.upgraderSlotsRow}>
+            <View
+              style={[
+                styles.upgraderBox,
+                { backgroundColor: theme.surfaceBg, borderColor: theme.cardBorder },
+              ]}
+            >
+              <Text style={[styles.upgraderBoxLabel, { color: theme.textSecondary }]}>
+                ВАШ СКИН
+              </Text>
+              {selectedUpgradeSkin ? (
+                <>
+                  <Image
+                    source={{ uri: selectedUpgradeSkin.image }}
+                    style={{ width: 84, height: 56, marginVertical: 4 }}
+                    resizeMode="contain"
+                  />
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.upgraderSkinTitle, { color: theme.textPrimary }]}
+                  >
+                    {selectedUpgradeSkin.name}
+                  </Text>
+                  <Text style={styles.upgraderPriceText}>
+                    ${selectedUpgradeSkin.price.toFixed(2)}
+                  </Text>
+                </>
+              ) : (
+                <Text style={[styles.upgraderEmptyHint, { color: theme.textMuted }]}>
+                  Выберите ниже
+                </Text>
+              )}
+            </View>
 
+            <View
+              style={[
+                styles.upgraderBox,
+                { backgroundColor: theme.surfaceBg, borderColor: theme.cardBorder },
+              ]}
+            >
+              <Text style={[styles.upgraderBoxLabel, { color: theme.textSecondary }]}>
+                ЦЕЛЬ (x{upgradeMultiplier})
+              </Text>
+              <Text style={[styles.upgraderTargetChance, { color: theme.textPrimary }]}>
+                {winChance}%
+              </Text>
+              <Text style={[styles.upgraderBoxLabel, { color: theme.textSecondary }]}>
+                ШАНС УСПЕХА
+              </Text>
+              <Text style={styles.upgraderPriceText}>
+                $
+                {selectedUpgradeSkin
+                  ? (selectedUpgradeSkin.price * upgradeMultiplier).toFixed(2)
+                  : '0.00'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Minimalist Wheel */}
           <View style={styles.wheelStage}>
-            <Svg width={184} height={184}>
+            <Svg width={164} height={164}>
               <Circle
-                cx={92}
-                cy={92}
+                cx={82}
+                cy={82}
                 r={wheelRadius}
-                stroke="rgba(148,163,184,0.22)"
-                strokeWidth={14}
+                stroke={theme.isLight ? '#E5E7EB' : 'rgba(255,255,255,0.08)'}
+                strokeWidth={12}
                 fill="none"
               />
               <Circle
-                cx={92}
-                cy={92}
+                cx={82}
+                cy={82}
                 r={wheelRadius}
-                stroke="#10B981"
-                strokeWidth={14}
+                stroke="#16A34A"
+                strokeWidth={12}
                 fill="none"
                 strokeDasharray={`${wheelCircumference} ${wheelCircumference}`}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
                 rotation="-90"
-                origin="92, 92"
+                origin="82, 82"
               />
             </Svg>
 
             <View style={styles.wheelCenterBox}>
-              {selectedUpgradeSkin ? (
-                <>
-                  <Image
-                    source={{ uri: selectedUpgradeSkin.image }}
-                    style={{ width: 70, height: 48 }}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.wheelChanceNum}>{winChance}%</Text>
-                  <Text style={[styles.wheelSubText, { color: theme.textSecondary }]}>
-                    → ${(selectedUpgradeSkin.price * upgradeMultiplier).toFixed(2)}
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.wheelChanceNum}>{winChance}%</Text>
-                  <Text style={[styles.wheelSubText, { color: theme.textSecondary }]}>
-                    Выберите скин
-                  </Text>
-                </>
-              )}
+              <Text style={[styles.wheelChanceNum, { color: theme.textPrimary }]}>
+                {winChance}%
+              </Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 10 }}>x{upgradeMultiplier}</Text>
             </View>
 
             <Animated.View
@@ -946,78 +974,111 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
             </Animated.View>
           </View>
 
+          {/* Multiplier Selector */}
           <View style={styles.multRow}>
-            {([1.5, 2, 5, 10] as const).map((m) => (
-              <TouchableOpacity
-                key={m}
-                disabled={isWheelSpinning}
-                onPress={() => setUpgradeMultiplier(m)}
-                style={[styles.multBtn, upgradeMultiplier === m && styles.multBtnActive]}
-              >
-                <Text style={[styles.multBtnText, { color: theme.textPrimary }]}>x{m}</Text>
-                <Text style={styles.multChanceText}>{chanceMap[m]}%</Text>
-              </TouchableOpacity>
-            ))}
+            {([1.5, 2, 5, 10] as const).map((m) => {
+              const active = upgradeMultiplier === m;
+              return (
+                <TouchableOpacity
+                  key={m}
+                  disabled={isWheelSpinning}
+                  onPress={() => setUpgradeMultiplier(m)}
+                  style={[
+                    styles.multBtn,
+                    {
+                      backgroundColor: active ? '#16A34A' : theme.surfaceBg,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.multBtnText,
+                      { color: active ? '#FFFFFF' : theme.textPrimary },
+                    ]}
+                  >
+                    x{m}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {upgradeResultMsg && (
             <Text
               style={[
-                styles.statusBanner,
-                { color: upgradeResultMsg.win ? '#10B981' : '#EF4444' },
+                styles.statusText,
+                { color: upgradeResultMsg.win ? '#16A34A' : '#EF4444' },
               ]}
             >
               {upgradeResultMsg.text}
             </Text>
           )}
 
-          <TouchableOpacity
-            style={[styles.primaryActionBtn, { backgroundColor: '#F59E0B' }]}
-            onPress={runUpgrade}
-          >
-            <Text style={styles.primaryActionText}>
+          <TouchableOpacity style={styles.greenActionBtn} onPress={runUpgrade}>
+            <Text style={styles.greenActionText}>
               {isWheelSpinning
-                ? 'КРУТИМ КОЛЕСО...'
+                ? 'УЛУЧШАЕМ...'
                 : selectedUpgradeSkin
-                ? `КРУТИТЬ АПГРЕЙД (ШАНС ${winChance}%)`
-                : 'ВЫБЕРИТЕ СКИН СО СКЛАДА НИЖЕ'}
+                ? `УЛУЧШИТЬ СКИН (${winChance}%)`
+                : 'ВЫБЕРИТЕ СКИН НИЖЕ'}
             </Text>
           </TouchableOpacity>
 
-          <Text style={[styles.sectionSubTitle, { color: theme.textSecondary }]}>
-            Ваш склад для апгрейда ({inventory.length}):
+          <Text style={[styles.inventoryPickerTitle, { color: theme.textSecondary }]}>
+            ВАШ СКЛАД ({inventory.length}) — НАЖМИТЕ ДЛЯ ВЫБОРА:
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+          <View style={styles.gridPickerWrap}>
             {inventory.map((item) => (
               <SkinCard
                 key={item.instanceId}
                 item={item}
-                compact
                 themeMode={themeMode}
                 selected={selectedUpgradeSkin?.instanceId === item.instanceId}
                 onPress={() => setSelectedUpgradeSkin(item)}
               />
             ))}
-          </ScrollView>
-        </LiquidGlassCard>
+          </View>
+        </View>
       )}
 
       {/* ==================== 3. MINES ==================== */}
       {activeGame === 'mines' && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(168, 85, 247, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>
-            💣 САПЁР CS2 (МИНЫ 5x5)
-          </Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Текущий множитель:{' '}
-            <Text style={{ color: '#10B981', fontWeight: '900' }}>
-              {currentMinesMultiplier()}x
+          <View style={styles.rowBetween}>
+            <Text style={[styles.betLabel, { color: theme.textSecondary }]}>
+              Множитель: <Text style={{ color: '#16A34A' }}>{currentMinesMultiplier()}x</Text>
             </Text>
-          </Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {[3, 5, 10, 15].map((cnt) => (
+                <TouchableOpacity
+                  key={cnt}
+                  disabled={minesActive}
+                  onPress={() => setMinesCount(cnt)}
+                  style={[
+                    styles.bombChip,
+                    {
+                      backgroundColor: minesCount === cnt ? '#16A34A' : theme.surfaceBg,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: minesCount === cnt ? '#FFFFFF' : theme.textSecondary,
+                      fontSize: 11,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {cnt} мин
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           <View style={styles.minesGrid}>
             {Array.from({ length: 25 }).map((_, idx) => {
@@ -1029,6 +1090,10 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
                   onPress={() => pressMineCell(idx)}
                   style={[
                     styles.mineCell,
+                    {
+                      backgroundColor: theme.surfaceBg,
+                      borderColor: theme.cardBorder,
+                    },
                     isRevealed && !isBomb && styles.mineCellSafe,
                     isRevealed && isBomb && styles.mineCellBomb,
                   ]}
@@ -1041,15 +1106,15 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
                           : 'diamond'
                         : minesGameOver && isBomb
                         ? 'flame-outline'
-                        : 'help'
+                        : 'ellipse'
                     }
-                    size={20}
+                    size={isRevealed ? 20 : 8}
                     color={
                       isRevealed
                         ? isBomb
                           ? '#EF4444'
-                          : '#10B981'
-                        : '#64748B'
+                          : '#16A34A'
+                        : theme.textMuted
                     }
                   />
                 </TouchableOpacity>
@@ -1057,58 +1122,35 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
             })}
           </View>
 
-          <View style={styles.inputRow}>
-            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ставка ($):</Text>
-            <TextInput
-              value={minesBet}
-              onChangeText={setMinesBet}
-              keyboardType="numeric"
-              editable={!minesActive}
-              style={[styles.betInput, { color: theme.textPrimary }]}
-            />
-            <View style={styles.bombCountRow}>
-              {[3, 5, 10, 15].map((cnt) => (
-                <TouchableOpacity
-                  key={cnt}
-                  disabled={minesActive}
-                  onPress={() => setMinesCount(cnt)}
-                  style={[styles.bombChip, minesCount === cnt && styles.bombChipActive]}
-                >
-                  <Text style={styles.bombChipText}>{cnt} бомб</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          {renderQuickBetBar(minesBet, setMinesBet, minesActive)}
 
           {!minesActive ? (
-            <TouchableOpacity style={styles.primaryActionBtn} onPress={startMines}>
-              <Text style={styles.primaryActionText}>НАЧАТЬ ИГРУ В МИНЫ</Text>
+            <TouchableOpacity style={styles.greenActionBtn} onPress={startMines}>
+              <Text style={styles.greenActionText}>НАЧАТЬ ИГРУ</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.primaryActionBtn, { backgroundColor: '#10B981' }]}
+              style={[styles.greenActionBtn, { backgroundColor: '#EAB308' }]}
               onPress={cashOutMines}
             >
-              <Text style={styles.primaryActionText}>
+              <Text style={[styles.greenActionText, { color: '#111827' }]}>
                 ЗАБРАТЬ ${(Number(minesBet) * currentMinesMultiplier()).toFixed(2)}
               </Text>
             </TouchableOpacity>
           )}
-        </LiquidGlassCard>
+        </View>
       )}
 
-      {/* ==================== 4. TRADE-UP ==================== */}
+      {/* ==================== 4. TRADE-UP CONTRACT (WITH 2-COLUMN GRID) ==================== */}
       {activeGame === 'tradeup' && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(236, 72, 153, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>
-            📜 КОНТРАКТ ОБМЕНА CS2
-          </Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Положите 5 скинов одной редкости в слоты, чтобы получить предмет редкостью выше!
+          <Text style={[styles.betLabel, { color: theme.textSecondary, marginBottom: 8 }]}>
+            Выберите 5 предметов одной редкости ({contractIds.length} / 5):
           </Text>
 
           <View style={styles.slotsRow}>
@@ -1121,83 +1163,80 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
                   onPress={() => slotItem && toggleContractSkin(slotItem)}
                   style={[
                     styles.contractSlot,
-                    r && { borderColor: r.color, backgroundColor: 'rgba(56,189,248,0.08)' },
+                    {
+                      backgroundColor: theme.surfaceBg,
+                      borderColor: r ? r.color : theme.cardBorder,
+                    },
                   ]}
                 >
                   {slotItem ? (
                     <Image
                       source={{ uri: slotItem.image }}
-                      style={{ width: 48, height: 38 }}
+                      style={{ width: 48, height: 36 }}
                       resizeMode="contain"
                     />
                   ) : (
-                    <Text style={styles.slotNumberText}>#{slotIdx + 1}</Text>
+                    <Text style={{ color: theme.textMuted, fontSize: 11, fontWeight: '700' }}>
+                      #{slotIdx + 1}
+                    </Text>
                   )}
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          {contractMessage && <Text style={styles.statusBanner}>{contractMessage}</Text>}
+          {contractMessage && (
+            <Text style={[styles.statusText, { color: '#16A34A' }]}>{contractMessage}</Text>
+          )}
 
-          <TouchableOpacity
-            style={[styles.primaryActionBtn, { backgroundColor: '#EC4899' }]}
-            onPress={executeTradeUp}
-          >
-            <Text style={[styles.primaryActionText, { color: '#FFFFFF' }]}>
-              ПОДПИСАТЬ КОНТРАКТ ({contractIds.length} / 5)
+          <TouchableOpacity style={styles.greenActionBtn} onPress={executeTradeUp}>
+            <Text style={styles.greenActionText}>
+              ОБМЕНЯТЬ 5 СКИНОВ ({contractIds.length}/5)
             </Text>
           </TouchableOpacity>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+          <Text style={[styles.inventoryPickerTitle, { color: theme.textSecondary }]}>
+            ДОСТУПНЫЕ СКИНЫ НА СКЛАДЕ:
+          </Text>
+          <View style={styles.gridPickerWrap}>
             {inventory
               .filter((i) => i.rarity !== 'gold' && !i.isSticker)
               .map((item) => (
                 <SkinCard
                   key={item.instanceId}
                   item={item}
-                  compact
                   themeMode={themeMode}
                   selected={contractIds.includes(item.instanceId)}
                   onPress={() => toggleContractSkin(item)}
                 />
               ))}
-          </ScrollView>
-        </LiquidGlassCard>
+          </View>
+        </View>
       )}
 
       {/* ==================== 5. COINFLIP ==================== */}
       {activeGame === 'coinflip' && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(250, 204, 21, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>
-            🪙 МОНЕТКА CS2 (CT vs T)
-          </Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Выберите фракцию и удвойте свою ставку (x1.94)
-          </Text>
-
           <View style={styles.coinArena}>
             <Animated.View
               style={[
                 styles.bigCoinCircle,
                 {
-                  borderColor: coinLanded === 'CT' ? '#38BDF8' : '#F59E0B',
-                  backgroundColor:
-                    coinLanded === 'CT'
-                      ? 'rgba(56, 189, 248, 0.18)'
-                      : 'rgba(245, 158, 11, 0.18)',
+                  backgroundColor: theme.surfaceBg,
+                  borderColor: coinLanded === 'CT' ? '#3B82F6' : '#EAB308',
                   transform: [{ scaleX: coinScaleX }],
                 },
               ]}
             >
               <Ionicons
                 name={coinLanded === 'CT' ? 'shield-half-outline' : 'flame-outline'}
-                size={42}
-                color={coinLanded === 'CT' ? '#0284C7' : '#D97706'}
+                size={38}
+                color={coinLanded === 'CT' ? '#3B82F6' : '#EAB308'}
               />
               <Text style={[styles.coinBadgeText, { color: theme.textPrimary }]}>
                 {coinLanded}
@@ -1208,61 +1247,71 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
           <View style={styles.multRow}>
             <TouchableOpacity
               onPress={() => setCoinSide('CT')}
-              style={[styles.multBtn, coinSide === 'CT' && styles.multBtnActive]}
+              style={[
+                styles.multBtn,
+                { backgroundColor: coinSide === 'CT' ? '#3B82F6' : theme.surfaceBg },
+              ]}
             >
-              <Text style={[styles.multBtnText, { color: theme.textPrimary }]}>CT (Спецназ)</Text>
+              <Text
+                style={[
+                  styles.multBtnText,
+                  { color: coinSide === 'CT' ? '#FFFFFF' : theme.textPrimary },
+                ]}
+              >
+                CT (Спецназ)
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setCoinSide('T')}
-              style={[styles.multBtn, coinSide === 'T' && styles.multBtnActive]}
+              style={[
+                styles.multBtn,
+                { backgroundColor: coinSide === 'T' ? '#EAB308' : theme.surfaceBg },
+              ]}
             >
-              <Text style={[styles.multBtnText, { color: theme.textPrimary }]}>T (Террористы)</Text>
+              <Text
+                style={[
+                  styles.multBtnText,
+                  { color: coinSide === 'T' ? '#111827' : theme.textPrimary },
+                ]}
+              >
+                T (Террористы)
+              </Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.inputRow}>
-            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ставка ($):</Text>
-            <TextInput
-              value={coinBet}
-              onChangeText={setCoinBet}
-              keyboardType="numeric"
-              style={[styles.betInput, { color: theme.textPrimary }]}
-            />
-          </View>
+          {renderQuickBetBar(coinBet, setCoinBet, coinFlipping)}
 
           {coinResult && (
             <Text
               style={[
-                styles.statusBanner,
-                { color: coinResult.win ? '#10B981' : '#EF4444' },
+                styles.statusText,
+                { color: coinResult.win ? '#16A34A' : '#EF4444' },
               ]}
             >
               {coinResult.text}
             </Text>
           )}
 
-          <TouchableOpacity style={styles.primaryActionBtn} onPress={flipCoin}>
-            <Text style={styles.primaryActionText}>
-              {coinFlipping ? 'МОНЕТА В ВОЗДУХЕ...' : 'БРОСИТЬ МОНЕТУ (x1.94)'}
+          <TouchableOpacity style={styles.greenActionBtn} onPress={flipCoin}>
+            <Text style={styles.greenActionText}>
+              {coinFlipping ? 'БРОСАЕМ МОНЕТУ...' : 'БРОСИТЬ МОНЕТУ (x1.94)'}
             </Text>
           </TouchableOpacity>
-        </LiquidGlassCard>
+        </View>
       )}
 
       {/* ==================== 6. BLACKJACK 21 ==================== */}
       {activeGame === 'blackjack' && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(16, 185, 129, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>🃏 БЛЭКДЖЕК 21</Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Наберите 21 очко и обыграйте дилера!
-          </Text>
-
-          <View style={styles.bjTable}>
-            <Text style={styles.bjLabel}>Дилер ({handSum(dealerHand)} очков):</Text>
+          <View style={[styles.bjTable, { backgroundColor: theme.surfaceBg }]}>
+            <Text style={[styles.betLabel, { color: theme.textSecondary }]}>
+              Карты дилера ({handSum(dealerHand)}):
+            </Text>
             <View style={styles.cardsRow}>
               {dealerHand.map((c, idx) => {
                 const isRed = c.suit === '♥' || c.suit === '♦';
@@ -1279,8 +1328,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
               })}
             </View>
 
-            <Text style={[styles.bjLabel, { marginTop: 12, color: '#38BDF8' }]}>
-              Ваша рука ({handSum(playerHand)} очков):
+            <Text style={[styles.betLabel, { color: theme.textPrimary, marginTop: 14 }]}>
+              Ваши карты ({handSum(playerHand)}):
             </Text>
             <View style={styles.cardsRow}>
               {playerHand.map((c, idx) => {
@@ -1299,81 +1348,66 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
             </View>
           </View>
 
-          {bjStatus !== '' && <Text style={styles.statusBanner}>{bjStatus}</Text>}
+          {bjStatus !== '' && (
+            <Text style={[styles.statusText, { color: theme.textPrimary }]}>{bjStatus}</Text>
+          )}
 
           {!bjActive ? (
             <>
-              <View style={styles.inputRow}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ставка ($):</Text>
-                <TextInput
-                  value={bjBet}
-                  onChangeText={setBjBet}
-                  keyboardType="numeric"
-                  style={[styles.betInput, { color: theme.textPrimary }]}
-                />
-              </View>
-              <TouchableOpacity style={styles.primaryActionBtn} onPress={startBlackjack}>
-                <Text style={styles.primaryActionText}>РАЗДАТЬ КАРТЫ</Text>
+              {renderQuickBetBar(bjBet, setBjBet, false)}
+              <TouchableOpacity style={styles.greenActionBtn} onPress={startBlackjack}>
+                <Text style={styles.greenActionText}>РАЗДАТЬ КАРТЫ</Text>
               </TouchableOpacity>
             </>
           ) : (
             <View style={styles.multRow}>
               <TouchableOpacity
-                style={[styles.primaryActionBtn, { flex: 1 }]}
+                style={[styles.greenActionBtn, { flex: 1 }]}
                 onPress={hitBlackjack}
               >
-                <Text style={styles.primaryActionText}>ЕЩЁ КАРТУ</Text>
+                <Text style={styles.greenActionText}>ЕЩЁ КАРТУ</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#10B981' }]}
+                style={[styles.greenActionBtn, { flex: 1, backgroundColor: '#EAB308' }]}
                 onPress={standBlackjack}
               >
-                <Text style={styles.primaryActionText}>ХВАТИТ</Text>
+                <Text style={[styles.greenActionText, { color: '#111827' }]}>ОСТАВИТЬ</Text>
               </TouchableOpacity>
             </View>
           )}
-        </LiquidGlassCard>
+        </View>
       )}
 
-      {/* ==================== 7. CLICKER & EXCHANGER ==================== */}
+      {/* ==================== 7. CLICKER & SHOP ==================== */}
       {(activeGame === 'clicker' || activeGame === 'exchanger') && (
-        <LiquidGlassCard
-          themeMode={themeMode}
-          style={styles.gameCard}
-          glowColor="rgba(56, 189, 248, 0.45)"
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
         >
-          <Text style={[styles.gameTitle, { color: theme.textPrimary }]}>
-            🛠️ ЦЕХ СБОРКИ КЕЙСОВ (АНТИ-БАНКРОТ)
-          </Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Проиграли весь баланс в лудке? Собирайте оружейные ящики вручную (+$0.50 за нажатие), чтобы вернуться в игру!
-          </Text>
-
           <TouchableOpacity
-            activeOpacity={0.8}
+            activeOpacity={0.85}
             onPress={handleWorkClick}
-            style={styles.clickerBigBtn}
+            style={[
+              styles.clickerBox,
+              { backgroundColor: theme.surfaceBg, borderColor: theme.cardBorder },
+            ]}
           >
-            <LinearGradient
-              colors={['#0284C7', '#0369A1']}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <MaterialCommunityIcons name="treasure-chest" size={42} color="#FACC15" />
-            <Text style={styles.clickerBtnTitle}>СОБРАТЬ ОРУЖЕЙНЫЙ ЯЩИК (+$0.50)</Text>
-            <Text style={styles.clickerBtnSub}>
-              Собрано ящиков за смену: {clickCount} (+${(clickCount * 0.5).toFixed(2)})
+            <MaterialCommunityIcons name="treasure-chest" size={36} color="#16A34A" />
+            <Text style={[styles.clickerTitle, { color: theme.textPrimary }]}>
+              Собрать оружейный кейс (+$0.50)
+            </Text>
+            <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
+              Заработано за смену: +${(clickCount * 0.5).toFixed(2)} ({clickCount} кликов)
             </Text>
           </TouchableOpacity>
 
-          <Text style={[styles.gameTitle, { color: theme.textPrimary, marginTop: 18 }]}>
-            🛒 МАГАЗИН ПРЯМОГО РАЗМЕНА СКИНОВ
+          <Text style={[styles.inventoryPickerTitle, { color: theme.textSecondary }]}>
+            ОРУЖЕЙНЫЙ МАГАЗИН:
           </Text>
-          <Text style={[styles.gameSub, { color: theme.textSecondary }]}>
-            Обменяйте баланс напрямую на любой скин из оружейной базы:
-          </Text>
-
-          <View style={styles.shopGrid}>
-            {allShopSkins.slice(0, 16).map((skin) => (
+          <View style={styles.gridPickerWrap}>
+            {allShopSkins.slice(0, 18).map((skin) => (
               <SkinCard
                 key={skin.id}
                 item={skin}
@@ -1383,7 +1417,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
               />
             ))}
           </View>
-        </LiquidGlassCard>
+        </View>
       )}
     </View>
   );
@@ -1392,328 +1426,235 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingBottom: 20,
+    paddingBottom: 24,
   },
-  lobbyHeroBanner: {
-    padding: 16,
-    marginBottom: 14,
-  },
-  lobbyTag: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  lobbyHeroTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  lobbyHeroSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 10,
   },
   lobbyGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  gameBlockCard: {
+  lobbyCard: {
     width: '48.4%',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    padding: 13,
-    marginBottom: 12,
-    overflow: 'hidden',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
     justifyContent: 'space-between',
-    minHeight: 205,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    minHeight: 175,
   },
-  blockTopRow: {
+  lobbyCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  blockBadgePill: {
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    paddingHorizontal: 8,
+  tagPill: {
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
   },
-  blockBadgeText: {
-    color: '#FDE047',
-    fontSize: 8,
-    fontWeight: '900',
+  tagPillText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
-  blockArtworkWrap: {
-    height: 76,
+  lobbyImgWrap: {
+    height: 68,
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 6,
   },
-  blockArtworkImg: {
-    width: 112,
-    height: 74,
+  lobbyImg: {
+    width: 100,
+    height: 64,
   },
-  blockTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
+  lobbyCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
   },
-  blockSubtitle: {
-    color: 'rgba(255,255,255,0.84)',
+  lobbyCardSub: {
     fontSize: 10,
-    fontWeight: '600',
     marginTop: 3,
     lineHeight: 13,
   },
-  blockPlayBtn: {
-    marginTop: 8,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: 10,
-    paddingVertical: 6,
-    alignItems: 'center',
-  },
-  blockPlayBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  insideGameTopBar: {
+  gameTopHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-  },
-  backToLobbyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(56, 189, 248, 0.16)',
-    borderWidth: 1.2,
-    borderColor: '#38BDF8',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
-  },
-  backToLobbyText: {
-    color: '#0284C7',
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  gameCard: {
-    padding: 16,
-  },
-  gameHeaderRow: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  gameTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  gameSub: {
-    fontSize: 11,
-    marginTop: 3,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
     marginBottom: 12,
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  backBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  gameHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  gamePanel: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   historyRow: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 6,
+    marginBottom: 10,
   },
   histPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
-    borderWidth: 1,
-    backgroundColor: 'rgba(15,23,42,0.8)',
   },
   histText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
   },
-  crashDisplay: {
-    height: 158,
-    borderRadius: 18,
-    backgroundColor: 'rgba(10, 18, 36, 0.92)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+  crashStage: {
+    height: 150,
+    borderRadius: 12,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
     overflow: 'hidden',
     position: 'relative',
   },
-  crashDisplayBusted: {
-    borderColor: '#EF4444',
-  },
-  crashMultText: {
-    color: '#F8FAFC',
-    fontSize: 40,
+  crashBigNumber: {
+    fontSize: 36,
     fontWeight: '900',
   },
-  crashStateText: {
-    color: '#CBD5E1',
+  crashSubStatus: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '600',
     marginTop: 4,
   },
+  betSection: {
+    marginBottom: 12,
+  },
+  betInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  betLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  betInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    fontWeight: '800',
+    minWidth: 100,
+    textAlign: 'right',
+  },
+  quickBetPills: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  quickBetBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  quickBetBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  greenActionBtn: {
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  greenActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  upgraderSlotsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  upgraderBox: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 110,
+  },
+  upgraderBoxLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  upgraderSkinTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  upgraderPriceText: {
+    color: '#16A34A',
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  upgraderEmptyHint: {
+    fontSize: 11,
+    marginTop: 12,
+  },
+  upgraderTargetChance: {
+    fontSize: 24,
+    fontWeight: '900',
+    marginVertical: 4,
+  },
   wheelStage: {
-    height: 196,
+    height: 175,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    marginVertical: 6,
+    marginVertical: 4,
   },
   wheelCenterBox: {
     position: 'absolute',
     alignItems: 'center',
-    justifyContent: 'center',
   },
   wheelChanceNum: {
-    color: '#10B981',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
-  },
-  wheelSubText: {
-    fontSize: 10,
-    fontWeight: '700',
   },
   wheelNeedleContainer: {
     position: 'absolute',
-    width: 184,
-    height: 184,
+    width: 164,
+    height: 164,
     justifyContent: 'flex-start',
     alignItems: 'center',
   },
   wheelNeedleTip: {
-    width: 10,
-    height: 18,
-    borderRadius: 5,
-    backgroundColor: '#F59E0B',
+    width: 8,
+    height: 16,
+    borderRadius: 4,
+    backgroundColor: '#EAB308',
     marginTop: 2,
-  },
-  slotsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  contractSlot: {
-    width: '18.2%',
-    height: 58,
-    borderRadius: 12,
-    borderWidth: 1.4,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(148,163,184,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(148,163,184,0.08)',
-  },
-  slotNumberText: {
-    color: '#64748B',
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  coinArena: {
-    height: 130,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  bigCoinCircle: {
-    width: 106,
-    height: 106,
-    borderRadius: 53,
-    borderWidth: 3,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  coinBadgeText: {
-    fontWeight: '900',
-    fontSize: 16,
-    marginTop: 2,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
-    flexWrap: 'wrap',
-  },
-  inputLabel: {
-    fontWeight: '800',
-    fontSize: 12,
-  },
-  betInput: {
-    backgroundColor: 'rgba(148,163,184,0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.4)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontWeight: '800',
-    minWidth: 85,
-  },
-  primaryActionBtn: {
-    backgroundColor: '#0284C7',
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  primaryActionText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 13,
-  },
-  minesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  mineCell: {
-    width: '18.5%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    backgroundColor: 'rgba(15, 23, 42, 0.12)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  mineCellSafe: {
-    backgroundColor: 'rgba(16, 185, 129, 0.22)',
-    borderColor: '#10B981',
-  },
-  mineCellBomb: {
-    backgroundColor: 'rgba(239, 68, 68, 0.3)',
-    borderColor: '#EF4444',
-  },
-  bombCountRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  bombChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-  },
-  bombChipActive: {
-    backgroundColor: '#7C3AED',
-    borderWidth: 1,
-    borderColor: '#C4B5FD',
-  },
-  bombChipText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
   },
   multRow: {
     flexDirection: 'row',
@@ -1723,99 +1664,134 @@ const styles = StyleSheet.create({
   multBtn: {
     flex: 1,
     paddingVertical: 9,
-    borderRadius: 12,
-    backgroundColor: 'rgba(148, 163, 184, 0.14)',
-    borderWidth: 1.2,
-    borderColor: 'rgba(148, 163, 184, 0.3)',
+    borderRadius: 8,
     alignItems: 'center',
   },
-  multBtnActive: {
-    backgroundColor: 'rgba(245, 158, 11, 0.24)',
-    borderColor: '#F59E0B',
-  },
   multBtnText: {
-    fontWeight: '900',
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '800',
   },
-  multChanceText: {
-    color: '#64748B',
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  statusBanner: {
-    color: '#10B981',
-    fontWeight: '900',
+  statusText: {
     textAlign: 'center',
-    marginVertical: 8,
     fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 10,
   },
-  sectionSubTitle: {
+  inventoryPickerTitle: {
     fontSize: 11,
     fontWeight: '800',
-    marginTop: 14,
+    marginTop: 16,
+    marginBottom: 8,
   },
-  shopGrid: {
+  gridPickerWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginTop: 8,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  bombChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  minesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  mineCell: {
+    width: '18.6%',
+    aspectRatio: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  mineCellSafe: {
+    borderColor: '#16A34A',
+    backgroundColor: 'rgba(22, 163, 74, 0.14)',
+  },
+  mineCellBomb: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+  },
+  slotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  contractSlot: {
+    width: '18.4%',
+    height: 54,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coinArena: {
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  bigCoinCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coinBadgeText: {
+    fontWeight: '900',
+    fontSize: 15,
+    marginTop: 2,
   },
   bjTable: {
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    padding: 14,
-    borderRadius: 16,
+    padding: 12,
+    borderRadius: 12,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.25)',
-  },
-  bjLabel: {
-    color: '#CBD5E1',
-    fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 6,
   },
   cardsRow: {
     flexDirection: 'row',
     gap: 8,
     flexWrap: 'wrap',
     minHeight: 54,
+    marginTop: 6,
   },
   playingCard: {
-    width: 44,
-    height: 58,
+    width: 42,
+    height: 56,
     borderRadius: 8,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   cardRank: {
-    color: '#0F172A',
+    color: '#111827',
     fontWeight: '900',
-    fontSize: 15,
+    fontSize: 14,
   },
   cardSuit: {
-    color: '#0F172A',
-    fontSize: 16,
-  },
-  clickerBigBtn: {
-    borderRadius: 18,
-    padding: 20,
-    alignItems: 'center',
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: '#38BDF8',
-  },
-  clickerBtnTitle: {
-    color: '#FFFFFF',
+    color: '#111827',
     fontSize: 15,
-    fontWeight: '900',
-    marginTop: 8,
   },
-  clickerBtnSub: {
-    color: '#E0F2FE',
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 4,
+  clickerBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 18,
+    alignItems: 'center',
+  },
+  clickerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 6,
   },
 });

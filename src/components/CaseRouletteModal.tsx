@@ -4,56 +4,77 @@ import {
   Dimensions,
   Easing,
   Image,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { CaseContainer, InventoryItem, RARITIES } from '../types/cs2';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  CaseContainer,
+  CatalogCategory,
+  InventoryItem,
+  RARITIES,
+  RarityKey,
+  SkinTemplate,
+  ThemeMode,
+} from '../types/cs2';
 import { rollSkinFromCase } from '../data/cs2Database';
-import { playDropSound, playTickSound } from '../utils/soundManager';
-import { LiquidGlassCard } from './LiquidGlassUI';
+import { playClickSound, playDropSound, playTickSound } from '../utils/soundManager';
+import { SkinCard, THEMES } from './LiquidGlassUI';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const TRACK_WIDTH = Math.min(SCREEN_WIDTH, 440);
-const CARD_WIDTH = 132;
-const CARD_MARGIN = 6;
+const TRACK_WIDTH = Math.min(SCREEN_WIDTH - 28, 412);
+const CARD_WIDTH = 124;
+const CARD_MARGIN = 5;
 const ITEM_SPAN = CARD_WIDTH + CARD_MARGIN * 2;
 const WINNING_INDEX = 24;
 const TOTAL_ITEMS = 29;
 
-interface CaseRouletteModalProps {
-  visible: boolean;
-  caseItem: CaseContainer | null;
-  openCount: number; // 1 to 5 simultaneous cases
-  fastSpin?: boolean;
-  onToggleFastSpin?: () => void;
-  onClose: () => void;
+const RARITY_SORT_ORDER: Record<RarityKey, number> = {
+  milspec: 1,
+  restricted: 2,
+  classified: 3,
+  covert: 4,
+  gold: 5,
+};
+
+interface CS2CaseScreenProps {
+  caseItem: CaseContainer;
+  balance: number;
+  themeMode: ThemeMode;
+  fastSpin: boolean;
+  onToggleFastSpin: () => void;
+  onBack: () => void;
+  onTrySpendBalance: (cost: number, count: number) => boolean;
   onCompleteDrops: (wonItems: InventoryItem[]) => void;
   onSellDrops: (wonItems: InventoryItem[]) => void;
-  onInspectDrop?: (wonItem: InventoryItem) => void;
+  onInspectDrop: (item: InventoryItem) => void;
+  onPreviewTemplate: (skin: SkinTemplate, category: CatalogCategory) => void;
 }
 
-export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
-  visible,
+export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   caseItem,
-  openCount = 1,
-  fastSpin = false,
+  balance,
+  themeMode,
+  fastSpin,
   onToggleFastSpin,
-  onClose,
+  onBack,
+  onTrySpendBalance,
   onCompleteDrops,
   onSellDrops,
   onInspectDrop,
+  onPreviewTemplate,
 }) => {
+  const theme = THEMES[themeMode] || THEMES.obsidian;
+
+  const [openCount, setOpenCount] = useState<number>(1);
+  const [stageState, setStageState] = useState<'idle' | 'spinning' | 'result'>('idle');
   const [strips, setStrips] = useState<InventoryItem[][]>([]);
   const [wonSkins, setWonSkins] = useState<InventoryItem[]>([]);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [showResult, setShowResult] = useState(false);
-  const [acceleratedThisSpin, setAcceleratedThisSpin] = useState(false);
+  const [acceleratedThisSpin, setAcceleratedThisSpin] = useState<boolean>(false);
+  const [showGoldList, setShowGoldList] = useState<boolean>(false);
 
   const scrollAnims = useRef<Animated.Value[]>([
     new Animated.Value(0),
@@ -64,59 +85,35 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
   ]).current;
 
   const targetTranslatesRef = useRef<number[]>([0, 0, 0, 0, 0]);
-  const resultScale = useRef(new Animated.Value(0.6)).current;
-  const goldPulse = useRef(new Animated.Value(0)).current;
   const lastTickIndex = useRef<number>(-1);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    if (visible && caseItem) {
-      startMultiOpening(caseItem, Math.max(1, Math.min(5, openCount)), fastSpin);
-    }
-  }, [visible, caseItem, openCount]);
+    return () => {
+      if (animRef.current) animRef.current.stop();
+      scrollAnims.forEach((a) => a.removeAllListeners());
+    };
+  }, []);
 
   const finishOpening = (winners: InventoryItem[]) => {
     scrollAnims.forEach((a) => a.removeAllListeners());
-    setIsSpinning(false);
-    setShowResult(true);
+    setStageState('result');
 
     const hasUltraRare = winners.some(
       (w) => w.rarity === 'gold' || w.rarity === 'covert' || w.rarity === 'classified'
     );
     playDropSound(hasUltraRare);
     onCompleteDrops(winners);
-
-    Animated.spring(resultScale, {
-      toValue: 1,
-      friction: 6,
-      tension: 75,
-      useNativeDriver: true,
-    }).start();
-
-    if (hasUltraRare) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(goldPulse, {
-            toValue: 1,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-          Animated.timing(goldPulse, {
-            toValue: 0.25,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    }
   };
 
-  const startMultiOpening = (container: CaseContainer, count: number, isFast: boolean) => {
-    setShowResult(false);
-    setIsSpinning(true);
-    setAcceleratedThisSpin(isFast);
-    resultScale.setValue(0.6);
-    goldPulse.setValue(0);
+  const handleUnlockContainer = () => {
+    if (stageState === 'spinning') return;
+    const totalCost = Number((caseItem.price * openCount).toFixed(2));
+    const ok = onTrySpendBalance(totalCost, openCount);
+    if (!ok) return;
+
+    setStageState('spinning');
+    setAcceleratedThisSpin(fastSpin);
     lastTickIndex.current = -1;
 
     const allStrips: InventoryItem[][] = [];
@@ -124,20 +121,20 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     const animations: Animated.CompositeAnimation[] = [];
 
     const centerOffset = TRACK_WIDTH / 2 - ITEM_SPAN / 2;
-    const baseDuration = isFast ? 1850 : 4800;
-    const cascadeDelay = isFast ? 95 : 210;
+    const baseDuration = fastSpin ? 1750 : 4600;
+    const cascadeDelay = fastSpin ? 80 : 180;
 
-    for (let s = 0; s < count; s++) {
+    for (let s = 0; s < openCount; s++) {
       scrollAnims[s].setValue(0);
       const rowItems: InventoryItem[] = [];
       for (let i = 0; i < TOTAL_ITEMS; i++) {
-        rowItems.push(rollSkinFromCase(container));
+        rowItems.push(rollSkinFromCase(caseItem));
       }
       const winner = rowItems[WINNING_INDEX];
       allStrips.push(rowItems);
       winners.push(winner);
 
-      const jitter = (Math.random() - 0.5) * (CARD_WIDTH * 0.45);
+      const jitter = (Math.random() - 0.5) * (CARD_WIDTH * 0.4);
       const targetTranslate = -(WINNING_INDEX * ITEM_SPAN - centerOffset + jitter);
       targetTranslatesRef.current[s] = targetTranslate;
 
@@ -177,20 +174,16 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     });
   };
 
-  // Accelerates the spin smoothly instead of instant-skipping!
-  const handleTriggerFastSpin = () => {
-    if (onToggleFastSpin) {
-      onToggleFastSpin();
-    }
-    if (!isSpinning || wonSkins.length === 0 || acceleratedThisSpin) return;
+  const handleSpeedUpActiveSpin = () => {
+    onToggleFastSpin();
+    if (stageState !== 'spinning' || wonSkins.length === 0 || acceleratedThisSpin) return;
     setAcceleratedThisSpin(true);
-    if (animRef.current) {
-      animRef.current.stop();
-    }
+    if (animRef.current) animRef.current.stop();
+
     const fastAnimations = strips.map((_, s) =>
       Animated.timing(scrollAnims[s], {
         toValue: targetTranslatesRef.current[s],
-        duration: 850 + s * 60,
+        duration: 750 + s * 50,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       })
@@ -204,70 +197,97 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     });
   };
 
-  if (!caseItem) return null;
+  const regularSkins = [...caseItem.items]
+    .filter((i) => i.rarity !== 'gold')
+    .sort((a, b) => RARITY_SORT_ORDER[a.rarity] - RARITY_SORT_ORDER[b.rarity]);
+  const goldSkins = caseItem.items.filter((i) => i.rarity === 'gold');
 
   const totalWonPrice = wonSkins.reduce((acc, item) => acc + item.price, 0);
-  const bestDrop = [...wonSkins].sort((a, b) => b.price - a.price)[0] || wonSkins[0];
-  const bestRarity = bestDrop ? RARITIES[bestDrop.rarity] : RARITIES.milspec;
+  const totalOpenCost = Number((caseItem.price * openCount).toFixed(2));
   const isCompactMulti = strips.length > 1;
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
-        <LinearGradient
-          colors={['rgba(8, 15, 32, 0.96)', 'rgba(15, 28, 55, 0.98)']}
-          style={StyleSheet.absoluteFillObject}
-        />
+    <View style={styles.screenContainer}>
+      {/* Top CS2 Navigation Header */}
+      <View
+        style={[
+          styles.topBar,
+          {
+            backgroundColor: theme.cardBg,
+            borderColor: theme.cardBorder,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.backBtn, { backgroundColor: theme.surfaceBg }]}
+          disabled={stageState === 'spinning'}
+          onPress={() => {
+            playClickSound();
+            onBack();
+          }}
+        >
+          <Ionicons name="arrow-back" size={18} color={theme.textPrimary} />
+          <Text style={[styles.backBtnText, { color: theme.textPrimary }]}>Кейсы</Text>
+        </TouchableOpacity>
 
-        {/* Rare Drop Ambient Flash */}
-        {showResult &&
-          (bestDrop?.rarity === 'gold' || bestDrop?.rarity === 'covert') && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFillObject,
-                {
-                  backgroundColor: bestRarity.glow.replace('0.5', '0.18').replace('0.6', '0.22'),
-                  opacity: goldPulse,
-                },
-              ]}
-            />
-          )}
+        <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
+          <Text numberOfLines={1} style={[styles.caseHeaderTitle, { color: theme.textPrimary }]}>
+            {caseItem.name}
+          </Text>
+          <Text numberOfLines={1} style={[styles.caseHeaderSub, { color: theme.textSecondary }]}>
+            {caseItem.subtitle}
+          </Text>
+        </View>
 
-        <View style={styles.contentColumn}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.multiBadge}>
-              <Ionicons
-                name={acceleratedThisSpin || fastSpin ? 'flash' : 'disc'}
-                size={13}
-                color={acceleratedThisSpin || fastSpin ? '#FACC15' : '#38BDF8'}
+        <View style={[styles.pricePill, { backgroundColor: theme.surfaceBg }]}>
+          <Text style={styles.pricePillText}>${caseItem.price.toFixed(2)}</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 150 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ==================== UPPER CS2 STAGE (CASE / ROULETTE / RESULT) ==================== */}
+        <View
+          style={[
+            styles.stageContainer,
+            {
+              backgroundColor: theme.cardBg,
+              borderColor: theme.cardBorder,
+            },
+          ]}
+        >
+          {stageState === 'idle' && (
+            <View style={styles.idleStageBox}>
+              <Image
+                source={{ uri: caseItem.image }}
+                style={styles.heroCaseImage}
+                resizeMode="contain"
               />
-              <Text style={styles.openingLabel}>
-                {acceleratedThisSpin || fastSpin ? '⚡ БЫСТРАЯ ПРОКРУТКА' : 'ОТКРЫТИЕ'} x{strips.length} •{' '}
-                {caseItem.name.toUpperCase()}
+              <Text style={[styles.idleHintText, { color: theme.textSecondary }]}>
+                Нажмите «Разблокировать контейнер» снизу, чтобы открыть кейс
               </Text>
             </View>
-          </View>
+          )}
 
-          {/* Multi-Reel Roulette Tracks */}
-          {!showResult && (
-            <ScrollView
-              style={{ maxHeight: 560, width: TRACK_WIDTH }}
-              contentContainerStyle={{ justifyContent: 'center' }}
-              showsVerticalScrollIndicator={false}
-            >
+          {stageState === 'spinning' && (
+            <View style={styles.spinningStageBox}>
               {strips.map((strip, sIdx) => (
                 <View
                   key={sIdx}
                   style={[
                     styles.trackContainer,
                     isCompactMulti && styles.trackContainerCompact,
+                    {
+                      backgroundColor: theme.isLight ? '#F3F4F6' : '#14161B',
+                      borderColor: theme.cardBorder,
+                    },
                   ]}
                 >
-                  <View style={styles.centerLaser} />
-                  <View style={styles.centerTriangleTop} />
-                  <View style={styles.centerTriangleBottom} />
+                  {/* Center CS2 Vertical Marker Line */}
+                  <View style={styles.centerMarkerLine} />
 
                   <Animated.View
                     style={[
@@ -279,20 +299,19 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
                   >
                     {strip.map((item, idx) => {
                       const r = RARITIES[item.rarity];
-                      const isGoldMystery = item.rarity === 'gold' && isSpinning;
+                      const isGoldMystery = item.rarity === 'gold';
                       return (
                         <View
                           key={`${item.instanceId}_${idx}`}
                           style={[
                             styles.rouletteCard,
                             isCompactMulti && styles.rouletteCardCompact,
-                            { borderColor: r.color },
+                            {
+                              backgroundColor: theme.skinCardBg,
+                              borderColor: theme.cardBorder,
+                            },
                           ]}
                         >
-                          <LinearGradient
-                            colors={['rgba(15, 24, 45, 0.96)', r.glow]}
-                            style={StyleSheet.absoluteFillObject}
-                          />
                           {isGoldMystery ? (
                             <View style={styles.goldMysteryBox}>
                               <Text style={styles.goldStarText}>★</Text>
@@ -310,11 +329,17 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
                             />
                           )}
                           <View>
-                            <Text numberOfLines={1} style={styles.rWeapon}>
-                              {item.weapon}
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.rWeapon, { color: theme.textSecondary }]}
+                            >
+                              {isGoldMystery ? '★ Особый предмет' : item.weapon}
                             </Text>
-                            <Text numberOfLines={1} style={[styles.rName, { color: '#FFFFFF' }]}>
-                              {item.name}
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.rName, { color: theme.textPrimary }]}
+                            >
+                              {isGoldMystery ? 'Нож / Перчатки' : item.name}
                             </Text>
                             <View style={[styles.rBottomBar, { backgroundColor: r.color }]} />
                           </View>
@@ -324,259 +349,392 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
                   </Animated.View>
                 </View>
               ))}
-            </ScrollView>
+            </View>
           )}
 
-          {/* Result Drop Showcase */}
-          {showResult && wonSkins.length > 0 ? (
-            <Animated.View style={[styles.resultWrap, { transform: [{ scale: resultScale }] }]}>
-              <LiquidGlassCard
-                glowColor={bestRarity.color}
-                themeMode="cyber_blue"
-                style={styles.resultCard}
-              >
-                <Text style={[styles.rarityBanner, { color: bestRarity.color }]}>
-                  ★ ВЫПАЛО ПРЕДМЕТОВ: {wonSkins.length} НА СУММУ ${totalWonPrice.toFixed(2)} ★
-                </Text>
+          {stageState === 'result' && wonSkins.length > 0 && (
+            <View style={styles.resultStageBox}>
+              <Text style={[styles.resultHeaderLabel, { color: theme.textSecondary }]}>
+                ПОЛУЧЕНО ПРЕДМЕТОВ: {wonSkins.length} • НА СУММУ ${totalWonPrice.toFixed(2)}
+              </Text>
 
-                {wonSkins.length === 1 ? (
-                  <View style={{ alignItems: 'center', width: '100%' }}>
-                    <View style={styles.badgesWrap}>
-                      {wonSkins[0].statTrak && (
-                        <View style={styles.stPill}>
-                          <Text style={styles.stPillText}>StatTrak™</Text>
-                        </View>
-                      )}
-                      {wonSkins[0].souvenir && (
-                        <View style={styles.souvPill}>
-                          <Text style={styles.souvPillText}>СУВЕНИРНЫЙ</Text>
-                        </View>
-                      )}
-                      <View style={styles.wearPill}>
-                        <Text style={styles.wearPillText}>{wonSkins[0].wearName}</Text>
-                      </View>
-                    </View>
-
-                    <Image
-                      source={{ uri: wonSkins[0].image }}
-                      style={styles.bigDropImg}
-                      resizeMode="contain"
-                    />
-
-                    <Text style={styles.wonTitle}>
-                      {wonSkins[0].weapon} |{' '}
-                      <Text style={{ color: bestRarity.color }}>{wonSkins[0].name}</Text>
-                    </Text>
-
-                    {!wonSkins[0].isSticker && (
-                      <Text style={styles.wonFloat}>
-                        Float: {wonSkins[0].floatValue.toFixed(6)}
+              {wonSkins.length === 1 ? (
+                <View style={styles.singleDropShowcase}>
+                  <View style={styles.singleDropBadges}>
+                    <View
+                      style={[
+                        styles.rarityTagPill,
+                        { backgroundColor: RARITIES[wonSkins[0].rarity].color },
+                      ]}
+                    >
+                      <Text style={styles.rarityTagPillText}>
+                        {RARITIES[wonSkins[0].rarity].name}
                       </Text>
+                    </View>
+                    {wonSkins[0].statTrak && (
+                      <View style={styles.stTagPill}>
+                        <Text style={styles.stTagPillText}>StatTrak™</Text>
+                      </View>
                     )}
-
-                    <Text style={styles.wonPrice}>${wonSkins[0].price.toFixed(2)}</Text>
+                    <View style={[styles.wearTagPill, { backgroundColor: theme.surfaceBg }]}>
+                      <Text style={[styles.wearTagPillText, { color: theme.textSecondary }]}>
+                        {wonSkins[0].wearName}
+                      </Text>
+                    </View>
                   </View>
-                ) : (
-                  <ScrollView
-                    style={{ maxHeight: 340, width: '100%', marginVertical: 12 }}
-                    showsVerticalScrollIndicator={false}
+
+                  <Image
+                    source={{ uri: wonSkins[0].image }}
+                    style={styles.singleDropImg}
+                    resizeMode="contain"
+                  />
+
+                  <Text style={[styles.singleDropTitle, { color: theme.textPrimary }]}>
+                    {wonSkins[0].weapon} | {wonSkins[0].name}
+                  </Text>
+                  {!wonSkins[0].isSticker && (
+                    <Text style={[styles.singleDropFloat, { color: theme.textMuted }]}>
+                      Float: {wonSkins[0].floatValue.toFixed(6)}
+                    </Text>
+                  )}
+                  <Text style={styles.singleDropPrice}>
+                    ${wonSkins[0].price.toFixed(2)}
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ width: '100%', marginVertical: 8 }}>
+                  {wonSkins.map((skin) => {
+                    const r = RARITIES[skin.rarity];
+                    return (
+                      <TouchableOpacity
+                        key={skin.instanceId}
+                        onPress={() => onInspectDrop(skin)}
+                        style={[
+                          styles.multiDropItemRow,
+                          {
+                            backgroundColor: theme.surfaceBg,
+                            borderLeftColor: r.color,
+                          },
+                        ]}
+                      >
+                        <Image
+                          source={{ uri: skin.image }}
+                          style={styles.multiDropImg}
+                          resizeMode="contain"
+                        />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.multiDropName, { color: theme.textPrimary }]}
+                          >
+                            {skin.statTrak ? 'StatTrak™ ' : ''}
+                            {skin.weapon} | {skin.name}
+                          </Text>
+                          <Text style={{ color: theme.textSecondary, fontSize: 10 }}>
+                            {r.name} • {skin.wear}
+                          </Text>
+                        </View>
+                        <Text style={styles.multiDropPrice}>${skin.price.toFixed(2)}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Post-Drop Action Row */}
+              <View style={styles.resultActionsRow}>
+                <TouchableOpacity
+                  style={[styles.resultSecondaryBtn, { backgroundColor: theme.surfaceBg }]}
+                  onPress={() => setStageState('idle')}
+                >
+                  <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>
+                    В СКЛАД (ГОТОВО)
+                  </Text>
+                </TouchableOpacity>
+
+                {wonSkins.length === 1 && (
+                  <TouchableOpacity
+                    style={[styles.resultSecondaryBtn, { backgroundColor: theme.surfaceBg }]}
+                    onPress={() => onInspectDrop(wonSkins[0])}
                   >
-                    {wonSkins.map((skin) => {
-                      const r = RARITIES[skin.rarity];
-                      return (
-                        <TouchableOpacity
-                          key={skin.instanceId}
-                          onPress={() => {
-                            if (onInspectDrop) {
-                              onClose();
-                              onInspectDrop(skin);
-                            }
-                          }}
-                          style={[styles.multiDropRow, { borderColor: r.color }]}
-                        >
-                          <LinearGradient
-                            colors={[r.glow.replace('0.45', '0.2'), 'rgba(15,23,42,0.85)']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={StyleSheet.absoluteFillObject}
-                          />
-                          <Image
-                            source={{ uri: skin.image }}
-                            style={styles.multiDropImg}
-                            resizeMode="contain"
-                          />
-                          <View style={{ flex: 1, marginLeft: 10 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={[styles.multiDropRarity, { color: r.color }]}>
-                                {r.name.toUpperCase()}
-                              </Text>
-                              {skin.statTrak && <Text style={styles.stMini}>ST™</Text>}
-                              <Text style={styles.wearMini}>{skin.wear}</Text>
-                            </View>
-                            <Text numberOfLines={1} style={styles.multiDropName}>
-                              {skin.weapon} | {skin.name}
-                            </Text>
-                          </View>
-                          <Text style={styles.multiDropPrice}>${skin.price.toFixed(2)}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+                    <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>
+                      3D ОСМОТР
+                    </Text>
+                  </TouchableOpacity>
                 )}
 
-                <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.keepBtn} onPress={onClose}>
-                    <Text style={styles.keepBtnText}>ВСЕ В СКЛАД</Text>
-                  </TouchableOpacity>
-
-                  {wonSkins.length === 1 && onInspectDrop && (
-                    <TouchableOpacity
-                      style={styles.inspectBtn}
-                      onPress={() => {
-                        onClose();
-                        onInspectDrop(wonSkins[0]);
-                      }}
-                    >
-                      <Text style={styles.inspectBtnText}>3D ОСМОТР</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity
-                    style={styles.sellNowBtn}
-                    onPress={() => {
-                      onSellDrops(wonSkins);
-                      onClose();
-                    }}
-                  >
-                    <Text style={styles.sellNowText}>
-                      ПРОДАТЬ (${totalWonPrice.toFixed(2)})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </LiquidGlassCard>
-            </Animated.View>
-          ) : (
-            <View style={styles.spinningStatusWrap}>
-              <TouchableOpacity
-                style={[
-                  styles.fastSpinBtn,
-                  (acceleratedThisSpin || fastSpin) && styles.fastSpinBtnActive,
-                ]}
-                onPress={handleTriggerFastSpin}
-              >
-                <Ionicons
-                  name="flash"
-                  size={15}
-                  color={acceleratedThisSpin || fastSpin ? '#0F172A' : '#FACC15'}
-                />
-                <Text
-                  style={[
-                    styles.fastSpinBtnText,
-                    (acceleratedThisSpin || fastSpin) && { color: '#0F172A' },
-                  ]}
+                <TouchableOpacity
+                  style={styles.resultSellBtn}
+                  onPress={() => {
+                    onSellDrops(wonSkins);
+                    setStageState('idle');
+                  }}
                 >
-                  {acceleratedThisSpin || fastSpin
-                    ? '⚡ БЫСТРОЕ ОТКРЫТИЕ АКТИВНО (x2.5 СКОРОСТЬ)'
-                    : '⚡ ВКЛЮЧИТЬ БЫСТРОЕ ОТКРЫТИЕ (УСКОРИТЬ ПРОКРУТКУ)'}
-                </Text>
-              </TouchableOpacity>
+                  <Text style={styles.resultSellBtnText}>
+                    ПРОДАТЬ (${totalWonPrice.toFixed(2)})
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
+
+        {/* ==================== CASE CONTENTS GRID (КАК В CS2) ==================== */}
+        <View style={styles.contentsHeaderRow}>
+          <Text style={[styles.contentsTitle, { color: theme.textPrimary }]}>
+            СОДЕРЖИМОЕ КОНТЕЙНЕРА ({caseItem.items.length})
+          </Text>
+          {goldSkins.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setShowGoldList((v) => !v)}
+              style={styles.goldFilterPill}
+            >
+              <Text style={styles.goldFilterPillText}>
+                {showGoldList
+                  ? 'Показать обычные скины'
+                  : `★ Особые предметы (${goldSkins.length})`}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.skinsGrid}>
+          {!showGoldList ? (
+            <>
+              {regularSkins.map((skin) => (
+                <SkinCard
+                  key={skin.id}
+                  item={skin}
+                  themeMode={themeMode}
+                  onPress={() => onPreviewTemplate(skin, caseItem.category)}
+                />
+              ))}
+
+              {/* Special Gold Mystery Tile (just like in CS2!) */}
+              {goldSkins.length > 0 && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setShowGoldList(true)}
+                  style={[
+                    styles.goldSpecialCard,
+                    {
+                      backgroundColor: theme.skinCardBg,
+                      borderColor: theme.cardBorder,
+                    },
+                  ]}
+                >
+                  <View style={styles.goldCircleIcon}>
+                    <MaterialCommunityIcons
+                      name="knife-military"
+                      size={28}
+                      color="#EAB308"
+                    />
+                  </View>
+                  <Text style={[styles.goldSpecialTitle, { color: theme.textPrimary }]}>
+                    ★ Редкий особый предмет
+                  </Text>
+                  <Text style={[styles.goldSpecialSub, { color: theme.textSecondary }]}>
+                    Ножи / Перчатки ({goldSkins.length} шт.)
+                  </Text>
+                  <View style={[styles.rBottomBar, { backgroundColor: '#EAB308', width: '100%' }]} />
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            goldSkins.map((skin) => (
+              <SkinCard
+                key={skin.id}
+                item={skin}
+                themeMode={themeMode}
+                onPress={() => onPreviewTemplate(skin, caseItem.category)}
+              />
+            ))
+          )}
+        </View>
+      </ScrollView>
+
+      {/* ==================== STICKY BOTTOM CS2 UNLOCK BAR ==================== */}
+      <View
+        style={[
+          styles.bottomUnlockBar,
+          {
+            backgroundColor: theme.tabBarBg,
+            borderColor: theme.cardBorder,
+          },
+        ]}
+      >
+        <View style={styles.controlsTopRow}>
+          <View style={styles.multiPillsRow}>
+            {[1, 2, 3, 4, 5].map((cnt) => {
+              const active = openCount === cnt;
+              return (
+                <TouchableOpacity
+                  key={cnt}
+                  disabled={stageState === 'spinning'}
+                  onPress={() => {
+                    playClickSound();
+                    setOpenCount(cnt);
+                  }}
+                  style={[
+                    styles.countPill,
+                    {
+                      backgroundColor: active ? '#16A34A' : theme.surfaceBg,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.countPillText,
+                      { color: active ? '#FFFFFF' : theme.textSecondary },
+                    ]}
+                  >
+                    x{cnt}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            onPress={handleSpeedUpActiveSpin}
+            style={[
+              styles.fastPillBtn,
+              {
+                backgroundColor: fastSpin ? '#EAB308' : theme.surfaceBg,
+              },
+            ]}
+          >
+            <Ionicons
+              name="flash"
+              size={13}
+              color={fastSpin ? '#111827' : theme.textSecondary}
+            />
+            <Text
+              style={[
+                styles.fastPillText,
+                { color: fastSpin ? '#111827' : theme.textSecondary },
+              ]}
+            >
+              Быстро
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          disabled={stageState === 'spinning'}
+          onPress={handleUnlockContainer}
+          style={[
+            styles.cs2GreenUnlockBtn,
+            stageState === 'spinning' && { opacity: 0.6 },
+          ]}
+        >
+          <Text style={styles.cs2GreenUnlockText}>
+            {stageState === 'spinning'
+              ? 'ОТКРЫВАЕМ КОНТЕЙНЕР...'
+              : `РАЗБЛОКИРОВАТЬ КОНТЕЙНЕР (x${openCount}) • $${totalOpenCost.toFixed(2)}`}
+          </Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+    </View>
   );
 };
 
+// Keep CaseRouletteModal for backward compatibility if needed
+export const CaseRouletteModal: React.FC<any> = () => null;
+
 const styles = StyleSheet.create({
-  overlay: {
+  screenContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 12,
   },
-  contentColumn: {
-    width: '100%',
-    maxWidth: 440,
-    alignItems: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  multiBadge: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(56, 189, 248, 0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.4)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
   },
-  openingLabel: {
-    color: '#38BDF8',
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  backBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  caseHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  caseHeaderSub: {
     fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.1,
+    marginTop: 1,
+  },
+  pricePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  pricePillText: {
+    color: '#16A34A',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  stageContainer: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
+    minHeight: 205,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idleStageBox: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  heroCaseImage: {
+    width: 190,
+    height: 145,
+  },
+  idleHintText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  spinningStageBox: {
+    width: '100%',
+    alignItems: 'center',
   },
   trackContainer: {
     width: TRACK_WIDTH,
-    height: 170,
-    backgroundColor: 'rgba(10, 18, 36, 0.94)',
-    borderTopWidth: 1.5,
-    borderBottomWidth: 1.5,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    height: 152,
+    borderRadius: 10,
+    borderWidth: 1,
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
-    marginBottom: 8,
-    borderRadius: 14,
-  },
-  trackContainerCompact: {
-    height: 104,
     marginBottom: 6,
   },
-  centerLaser: {
+  trackContainerCompact: {
+    height: 98,
+    marginBottom: 5,
+  },
+  centerMarkerLine: {
     position: 'absolute',
-    left: TRACK_WIDTH / 2 - 1.5,
+    left: TRACK_WIDTH / 2 - 1,
     top: 0,
     bottom: 0,
-    width: 3,
-    backgroundColor: '#FFD700',
+    width: 2,
+    backgroundColor: '#EAB308',
     zIndex: 20,
-    shadowColor: '#FFD700',
-    shadowOpacity: 1,
-    shadowRadius: 10,
-  },
-  centerTriangleTop: {
-    position: 'absolute',
-    top: 0,
-    left: TRACK_WIDTH / 2 - 7,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderTopWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#FFD700',
-    zIndex: 21,
-  },
-  centerTriangleBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: TRACK_WIDTH / 2 - 7,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderBottomWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#FFD700',
-    zIndex: 21,
   },
   stripRow: {
     flexDirection: 'row',
@@ -584,244 +742,285 @@ const styles = StyleSheet.create({
   },
   rouletteCard: {
     width: CARD_WIDTH,
-    height: 148,
+    height: 134,
     marginHorizontal: CARD_MARGIN,
-    borderRadius: 16,
-    borderWidth: 1.4,
+    borderRadius: 10,
+    borderWidth: 1,
     padding: 8,
     justifyContent: 'space-between',
     overflow: 'hidden',
   },
   rouletteCardCompact: {
-    height: 92,
+    height: 86,
     padding: 6,
   },
   rouletteImg: {
     width: '100%',
-    height: 86,
+    height: 78,
   },
   rouletteImgCompact: {
     width: '100%',
-    height: 46,
+    height: 44,
   },
   goldMysteryBox: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 215, 0, 0.18)',
-    borderRadius: 10,
+    backgroundColor: 'rgba(234, 179, 8, 0.14)',
+    borderRadius: 8,
   },
   goldStarText: {
-    color: '#FFD700',
-    fontSize: 28,
+    color: '#EAB308',
+    fontSize: 24,
     fontWeight: '900',
   },
   goldMysteryLabel: {
-    color: '#FDE047',
+    color: '#EAB308',
     fontSize: 8,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   rWeapon: {
-    color: '#94A3B8',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   rName: {
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   rBottomBar: {
     height: 3,
-    borderRadius: 2,
-    marginTop: 3,
-  },
-  resultWrap: {
-    width: '100%',
-    marginTop: 8,
-  },
-  resultCard: {
-    padding: 18,
-    alignItems: 'center',
-  },
-  rarityBanner: {
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  badgesWrap: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  stPill: {
-    backgroundColor: 'rgba(255, 110, 20, 0.25)',
-    borderWidth: 1,
-    borderColor: '#FF6E14',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  stPillText: {
-    color: '#FF8A3D',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  souvPill: {
-    backgroundColor: 'rgba(255, 215, 0, 0.22)',
-    borderWidth: 1,
-    borderColor: '#FFD700',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  souvPillText: {
-    color: '#FFD700',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  wearPill: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  wearPillText: {
-    color: '#E2E8F0',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  bigDropImg: {
-    width: 240,
-    height: 155,
-    marginVertical: 8,
-  },
-  wonTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  wonFloat: {
-    color: '#CBD5E1',
-    fontSize: 11,
+    borderRadius: 1.5,
     marginTop: 4,
   },
-  wonPrice: {
-    color: '#10B981',
-    fontSize: 22,
-    fontWeight: '900',
-    marginTop: 6,
-  },
-  multiDropRow: {
-    flexDirection: 'row',
+  resultStageBox: {
+    width: '100%',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 14,
-    borderWidth: 1.2,
-    marginBottom: 8,
-    overflow: 'hidden',
   },
-  multiDropImg: {
-    width: 64,
-    height: 46,
+  resultHeaderLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
-  multiDropRarity: {
-    fontSize: 9,
-    fontWeight: '900',
+  singleDropShowcase: {
+    alignItems: 'center',
+    marginVertical: 8,
   },
-  stMini: {
-    color: '#FB923C',
-    fontSize: 9,
-    fontWeight: '900',
+  singleDropBadges: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
-  wearMini: {
-    color: '#CBD5E1',
-    fontSize: 9,
+  rarityTagPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  rarityTagPillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '800',
   },
-  multiDropName: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '900',
+  stTagPill: {
+    backgroundColor: 'rgba(249, 115, 22, 0.18)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  stTagPillText: {
+    color: '#F97316',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  wearTagPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  wearTagPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  singleDropImg: {
+    width: 210,
+    height: 135,
+    marginVertical: 4,
+  },
+  singleDropTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  singleDropFloat: {
+    fontSize: 11,
     marginTop: 2,
   },
-  multiDropPrice: {
-    color: '#34D399',
-    fontSize: 14,
+  singleDropPrice: {
+    color: '#16A34A',
+    fontSize: 20,
     fontWeight: '900',
-    marginLeft: 8,
+    marginTop: 4,
   },
-  actionRow: {
+  multiDropItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 9,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    marginBottom: 6,
+  },
+  multiDropImg: {
+    width: 56,
+    height: 40,
+  },
+  multiDropName: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  multiDropPrice: {
+    color: '#16A34A',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  resultActionsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 14,
     width: '100%',
+    marginTop: 8,
   },
-  keepBtn: {
+  resultSecondaryBtn: {
     flex: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.22)',
-    borderWidth: 1.2,
-    borderColor: '#38BDF8',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  keepBtnText: {
-    color: '#38BDF8',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  inspectBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(168, 85, 247, 0.24)',
-    borderWidth: 1.2,
-    borderColor: '#A855F7',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  inspectBtnText: {
-    color: '#E9D5FF',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  sellNowBtn: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  sellNowText: {
-    color: '#052E16',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  spinningStatusWrap: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  fastSpinBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    backgroundColor: 'rgba(250, 204, 21, 0.16)',
-    borderWidth: 1.3,
-    borderColor: '#FACC15',
-    paddingHorizontal: 18,
     paddingVertical: 11,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  resultSecondaryBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  resultSellBtn: {
+    flex: 1,
+    backgroundColor: '#16A34A',
+    paddingVertical: 11,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  resultSellBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  contentsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  contentsTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  goldFilterPill: {
+    backgroundColor: 'rgba(234, 179, 8, 0.16)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  goldFilterPillText: {
+    color: '#D97706',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  skinsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  goldSpecialCard: {
+    width: '48.4%',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 148,
+  },
+  goldCircleIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(234, 179, 8, 0.14)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  goldSpecialTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  goldSpecialSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  bottomUnlockBar: {
+    position: 'absolute',
+    bottom: 68,
+    left: 0,
+    right: 0,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 14,
   },
-  fastSpinBtnActive: {
-    backgroundColor: '#FACC15',
-    borderColor: '#FDE047',
+  controlsTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  fastSpinBtnText: {
-    color: '#FACC15',
-    fontWeight: '900',
+  multiPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  countPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  countPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  fastPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  fastPillText: {
     fontSize: 11,
+    fontWeight: '800',
+  },
+  cs2GreenUnlockBtn: {
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  cs2GreenUnlockText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
 });

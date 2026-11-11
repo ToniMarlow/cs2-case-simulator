@@ -1,0 +1,45 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-android-apk:
+    name: Build CS2 Case Simulator APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Generate native Android project (Expo Prebuild)
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build Release APK with Gradle
+        working-directory: ./android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload Ready APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS2-Case-Simulator-APK
+          path: android/app/build/outputs/apk/release/*.apk

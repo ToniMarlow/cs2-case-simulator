@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -64,6 +65,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       />
 
       <LiquidGlassCard glowColor="rgba(56, 189, 248, 0.4)" style={styles.card}>
+        <Image
+          source={require('../../assets/icon.png')}
+          style={{ width: 92, height: 92, borderRadius: 22, alignSelf: 'center', marginBottom: 10 }}
+        />
         <Text style={styles.badgeTop}>CS2 CASE SIMULATOR • LIQUID GLASS</Text>
         <Text style={styles.title}>Вход в аккаунт</Text>
         <Text style={styles.subtitle}>

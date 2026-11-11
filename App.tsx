@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
   Modal,
   Platform,
@@ -9,54 +8,78 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   CaseContainer,
   CatalogCategory,
   InventoryItem,
+  QuestDifficulty,
   QuestItem,
   RARITIES,
   RarityKey,
   SkinTemplate,
+  ThemeMode,
   UserProfile,
 } from './src/types/cs2';
 import { INITIAL_CASES, INITIAL_QUESTS, instantiateSkin } from './src/data/cs2Database';
-import { LiquidGlassCard, SkinCard } from './src/components/LiquidGlassUI';
+import {
+  GameNotificationBanner,
+  InGameNotification,
+  LiquidGlassCard,
+  SkinCard,
+  THEMES,
+} from './src/components/LiquidGlassUI';
 import { CaseRouletteModal } from './src/components/CaseRouletteModal';
 import { SkinInspectorModal } from './src/components/SkinInspectorModal';
-import { MiniGamesHub } from './src/components/MiniGamesHub';
-import { AuthScreen } from './src/components/AuthScreen';
+import { MiniGamesHub, MiniGameTab } from './src/components/MiniGamesHub';
+import {
+  ACCOUNTS_REGISTRY_KEY,
+  AuthScreen,
+  decodeCloudSyncToken,
+  encodeCloudSyncToken,
+  StoredAccountRecord,
+} from './src/components/AuthScreen';
 import {
   DailyRewardModal,
   getRankByElo,
   LeaderboardSection,
 } from './src/components/RankAndRewardsModal';
-import { playWinSound, setSoundEnabled } from './src/utils/soundManager';
+import { playClickSound, playWinSound, setSoundEnabled } from './src/utils/soundManager';
 
-const STORAGE_KEY = '@cs2_liquid_glass_save_v2';
+const STORAGE_KEY = '@cs2_liquid_glass_save_v3';
 
-type BottomNavTab = 'cases' | 'inventory' | 'minigames' | 'quests' | 'profile';
+type BottomNavTab = 'cases' | 'inventory' | 'minigames' | 'quests' | 'profile' | 'settings';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [balance, setBalance] = useState<number>(1000.0);
+  const [balance, setBalance] = useState<number>(25.0);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [quests, setQuests] = useState<QuestItem[]>(INITIAL_QUESTS);
-  const [eloRating, setEloRating] = useState<number>(1250);
+  const [eloRating, setEloRating] = useState<number>(1000);
   const [streakDay, setStreakDay] = useState<number>(1);
   const [lastClaimDate, setLastClaimDate] = useState<string>('');
   const [dailyModalOpen, setDailyModalOpen] = useState<boolean>(false);
+
+  // Settings state (Bright theme default as requested!)
+  const [themeMode, setThemeMode] = useState<ThemeMode>('bright');
   const [soundOn, setSoundOn] = useState<boolean>(true);
+  const [fastSpin, setFastSpin] = useState<boolean>(false);
+  const [showLiveTicker, setShowLiveTicker] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+
+  // Custom In-Game Notification state (replaces all native Alert.alert!)
+  const [notification, setNotification] = useState<InGameNotification | null>(null);
+  const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Navigation & UI state
   const [activeTab, setActiveTab] = useState<BottomNavTab>('cases');
+  const [requestedMiniGame, setRequestedMiniGame] = useState<MiniGameTab>('lobby');
   const [catalogCategory, setCatalogCategory] = useState<CatalogCategory>('base_cases');
   const [viewingCaseDetails, setViewingCaseDetails] = useState<CaseContainer | null>(null);
   const [selectedCase, setSelectedCase] = useState<CaseContainer | null>(null);
@@ -64,6 +87,25 @@ export default function App() {
   const [rouletteOpen, setRouletteOpen] = useState<boolean>(false);
   const [inspectedSkin, setInspectedSkin] = useState<InventoryItem | null>(null);
   const [invFilter, setInvFilter] = useState<'all' | RarityKey>('all');
+  const [questFilter, setQuestFilter] = useState<'all' | QuestDifficulty>('all');
+  const [importSyncInput, setImportSyncInput] = useState<string>('');
+
+  const showNotify = (
+    title: string,
+    message: string,
+    type: InGameNotification['type'] = 'info'
+  ) => {
+    if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+    setNotification({
+      id: String(Date.now()),
+      title,
+      message,
+      type,
+    });
+    notifyTimerRef.current = setTimeout(() => {
+      setNotification(null);
+    }, 4300);
+  };
 
   // Load saved state on startup
   useEffect(() => {
@@ -75,10 +117,17 @@ export default function App() {
           if (parsed.user) setUser(parsed.user);
           if (typeof parsed.balance === 'number') setBalance(parsed.balance);
           if (Array.isArray(parsed.inventory)) setInventory(parsed.inventory);
-          if (Array.isArray(parsed.quests)) setQuests(parsed.quests);
+          if (Array.isArray(parsed.quests) && parsed.quests.length >= INITIAL_QUESTS.length) {
+            setQuests(parsed.quests);
+          }
           if (typeof parsed.eloRating === 'number') setEloRating(parsed.eloRating);
           if (typeof parsed.streakDay === 'number') setStreakDay(parsed.streakDay);
           if (typeof parsed.lastClaimDate === 'string') setLastClaimDate(parsed.lastClaimDate);
+          if (parsed.themeMode) setThemeMode(parsed.themeMode);
+          if (typeof parsed.fastSpin === 'boolean') setFastSpin(parsed.fastSpin);
+          if (typeof parsed.showLiveTicker === 'boolean') {
+            setShowLiveTicker(parsed.showLiveTicker);
+          }
           if (typeof parsed.soundOn === 'boolean') {
             setSoundOn(parsed.soundOn);
             setSoundEnabled(parsed.soundOn);
@@ -89,7 +138,7 @@ export default function App() {
     })();
   }, []);
 
-  // Auto-save whenever state changes
+  // Auto-save active session & update verified accounts registry for cross-login persistence
   useEffect(() => {
     if (!isLoaded) return;
     const payload = JSON.stringify({
@@ -100,22 +149,65 @@ export default function App() {
       eloRating,
       streakDay,
       lastClaimDate,
+      themeMode,
       soundOn,
+      fastSpin,
+      showLiveTicker,
     });
     AsyncStorage.setItem(STORAGE_KEY, payload).catch(() => {});
-  }, [user, balance, inventory, quests, eloRating, streakDay, lastClaimDate, soundOn, isLoaded]);
+
+    if (user?.email) {
+      (async () => {
+        try {
+          const regRaw = await AsyncStorage.getItem(ACCOUNTS_REGISTRY_KEY);
+          const reg: Record<string, StoredAccountRecord> = regRaw ? JSON.parse(regRaw) : {};
+          reg[user.email.toLowerCase()] = {
+            profile: user,
+            balance,
+            inventory,
+            quests,
+            eloRating,
+            streakDay,
+            lastClaimDate,
+            updatedAt: Date.now(),
+          };
+          await AsyncStorage.setItem(ACCOUNTS_REGISTRY_KEY, JSON.stringify(reg));
+        } catch {}
+      })();
+    }
+  }, [
+    user,
+    balance,
+    inventory,
+    quests,
+    eloRating,
+    streakDay,
+    lastClaimDate,
+    themeMode,
+    soundOn,
+    fastSpin,
+    showLiveTicker,
+    isLoaded,
+  ]);
 
   const todayKey = new Date().toISOString().slice(0, 10);
   const canClaimDaily = lastClaimDate !== todayKey;
 
   const handleClaimDailyBonus = (amount: number) => {
     if (!canClaimDaily) return;
-    setBalance((b) => Number((b + amount).toFixed(2)));
+    // Scale daily reward realistically so economy stays challenging
+    const scaledReward = Math.max(2.5, Number((amount * 0.2).toFixed(2)));
+    setBalance((b) => Number((b + scaledReward).toFixed(2)));
     setLastClaimDate(todayKey);
     setStreakDay((d) => (d >= 7 ? 1 : d + 1));
-    setEloRating((e) => e + 200);
+    setEloRating((e) => e + 120);
     setDailyModalOpen(false);
     playWinSound();
+    showNotify(
+      'Ежедневный бонус получен!',
+      `На ваш баланс зачислено +$${scaledReward.toFixed(2)} и +120 CS Rating!`,
+      'reward'
+    );
   };
 
   const incrementQuest = (type: QuestItem['type'], amount = 1) => {
@@ -129,11 +221,12 @@ export default function App() {
   const handleOpenCasePress = (container: CaseContainer, count = 1) => {
     const totalCost = Number((container.price * count).toFixed(2));
     if (balance < totalCost) {
-      Alert.alert(
+      showNotify(
         'Недостаточно средств ($)',
         `Для открытия x${count} «${container.name}» нужно $${totalCost.toFixed(
           2
-        )}. Продай скины из инвентаря или выполни задания!`
+        )} (у вас $${balance.toFixed(2)}). Продайте скины на складе или заработайте в Цехе Сборки!`,
+        'error'
       );
       return;
     }
@@ -142,7 +235,7 @@ export default function App() {
     setSelectedCase(container);
     setOpenMultiplier(count);
     setRouletteOpen(true);
-    setEloRating((e) => e + count * 85);
+    setEloRating((e) => e + count * 45);
     incrementQuest('open_cases', count);
   };
 
@@ -152,7 +245,7 @@ export default function App() {
       (w) => w.rarity === 'covert' || w.rarity === 'gold'
     ).length;
     if (rareCount > 0) {
-      setEloRating((e) => e + rareCount * 450);
+      setEloRating((e) => e + rareCount * 350);
       incrementQuest('get_covert', rareCount);
     }
   };
@@ -164,6 +257,11 @@ export default function App() {
     setBalance((b) => Number((b + sum).toFixed(2)));
     incrementQuest('sell_items', itemsToSell.length);
     playWinSound();
+    showNotify(
+      'Дроп продан!',
+      `Вы продали ${itemsToSell.length} предм. за +$${sum.toFixed(2)}`,
+      'success'
+    );
   };
 
   const handleSellItem = (item: InventoryItem) => {
@@ -171,6 +269,11 @@ export default function App() {
     setBalance((b) => Number((b + item.price).toFixed(2)));
     incrementQuest('sell_items', 1);
     playWinSound();
+    showNotify(
+      'Скин продан',
+      `${item.weapon} | ${item.name} продан за +$${item.price.toFixed(2)}`,
+      'success'
+    );
   };
 
   const handleApplySticker = (itemId: string, sticker: { name: string; image: string }) => {
@@ -181,12 +284,13 @@ export default function App() {
         const updated = {
           ...it,
           stickers: nextStickers,
-          price: Number((it.price + 4.5).toFixed(2)),
+          price: Number((it.price + 1.5).toFixed(2)),
         };
         setInspectedSkin(updated);
         return updated;
       })
     );
+    showNotify('Наклейка нанесена!', `Стикер ${sticker.name} добавлен на оружие.`, 'info');
   };
 
   const handlePreviewTemplate = (skin: SkinTemplate, category: CatalogCategory) => {
@@ -198,7 +302,11 @@ export default function App() {
   const handleSellAllCheap = () => {
     const cheap = inventory.filter((i) => i.rarity === 'milspec' || i.rarity === 'restricted');
     if (cheap.length === 0) {
-      Alert.alert('Нет дешёвых предметов', 'В инвентаре нет армейских или запрещённых скинов.');
+      showNotify(
+        'Нет недорогих скинов',
+        'На складе нет армейских или запрещённых предметов для массовой продажи.',
+        'warning'
+      );
       return;
     }
     const totalSum = cheap.reduce((acc, i) => acc + i.price, 0);
@@ -207,7 +315,29 @@ export default function App() {
     setBalance((b) => Number((b + totalSum).toFixed(2)));
     incrementQuest('sell_items', cheap.length);
     playWinSound();
-    Alert.alert('Продано!', `Продано ${cheap.length} предм. на сумму +$${totalSum.toFixed(2)}`);
+    showNotify(
+      'Массовая продажа выполнена!',
+      `Продано ${cheap.length} предм. на общую сумму +$${totalSum.toFixed(2)}`,
+      'success'
+    );
+  };
+
+  const handleSellEntireInventory = () => {
+    if (inventory.length === 0) {
+      showNotify('Склад пуст', 'В вашем инвентаре пока нет предметов.', 'warning');
+      return;
+    }
+    const totalSum = inventory.reduce((acc, i) => acc + i.price, 0);
+    const count = inventory.length;
+    setInventory([]);
+    setBalance((b) => Number((b + totalSum).toFixed(2)));
+    incrementQuest('sell_items', count);
+    playWinSound();
+    showNotify(
+      'Весь склад продан!',
+      `Продано ${count} предм. на сумму +$${totalSum.toFixed(2)}`,
+      'reward'
+    );
   };
 
   const handleClaimQuest = (quest: QuestItem) => {
@@ -216,19 +346,45 @@ export default function App() {
       prev.map((q) => (q.id === quest.id ? { ...q, claimed: true } : q))
     );
     setBalance((b) => Number((b + quest.reward).toFixed(2)));
+    setEloRating((e) => e + 150);
     playWinSound();
+    showNotify(
+      'Миссия выполнена!',
+      `Награда +$${quest.reward.toFixed(2)} зачислена на ваш баланс!`,
+      'reward'
+    );
   };
 
+  const theme = THEMES[themeMode] || THEMES.bright;
+
   if (!isLoaded) {
-    return <View style={{ flex: 1, backgroundColor: '#04060D' }} />;
+    return <View style={{ flex: 1, backgroundColor: theme.bgGradient[0] }} />;
   }
 
   const filteredCases = INITIAL_CASES.filter((c) => c.category === catalogCategory);
   const filteredInventory =
     invFilter === 'all' ? inventory : inventory.filter((i) => i.rarity === invFilter);
+  const filteredQuests =
+    questFilter === 'all' ? quests : quests.filter((q) => q.difficulty === questFilter);
   const totalInventoryValue = inventory.reduce((acc, i) => acc + i.price, 0);
   const rankData = getRankByElo(eloRating);
   const bestPlayerSkin = [...inventory].sort((a, b) => b.price - a.price)[0];
+
+  // Bankruptcy detection: player has less than $0.90 and zero items in inventory
+  const isBankrupt = balance < 0.9 && inventory.length === 0;
+
+  const currentSyncToken = user
+    ? encodeCloudSyncToken({
+        profile: user,
+        balance,
+        inventory,
+        quests,
+        eloRating,
+        streakDay,
+        lastClaimDate,
+        updatedAt: Date.now(),
+      })
+    : '';
 
   const webPhoneFrame: any =
     Platform.OS === 'web'
@@ -239,37 +395,74 @@ export default function App() {
           maxHeight: 915,
           borderRadius: 42,
           borderWidth: 2,
-          borderColor: 'rgba(255, 255, 255, 0.14)',
-          boxShadow: '0 30px 90px rgba(0, 0, 0, 0.85), 0 0 60px rgba(56, 189, 248, 0.14)',
+          borderColor: theme.cardBorder,
+          boxShadow: '0 30px 90px rgba(0, 0, 0, 0.45), 0 0 60px rgba(56, 189, 248, 0.18)',
           overflow: 'hidden',
         }
       : { flex: 1, width: '100%' };
 
   return (
-    <View style={styles.desktopStage}>
-      <StatusBar barStyle="light-content" backgroundColor="#04060D" />
+    <View style={[styles.desktopStage, { backgroundColor: theme.bgGradient[2] }]}>
+      <StatusBar
+        barStyle={theme.isLight ? 'dark-content' : 'light-content'}
+        backgroundColor={theme.bgGradient[0]}
+      />
       <LinearGradient
-        colors={['#03050B', '#080D1C', '#0E152B']}
+        colors={theme.bgGradient}
         style={StyleSheet.absoluteFillObject}
       />
 
       {/* MOBILE PHONE SIMULATOR FRAME */}
       <SafeAreaView style={[styles.phoneContainer, webPhoneFrame]}>
         <LinearGradient
-          colors={['#060914', '#0B1122', '#080C18']}
+          colors={theme.bgGradient}
           style={StyleSheet.absoluteFillObject}
         />
 
-        {/* Ambient Soft Glows */}
-        <View style={styles.ambientTopGlow} />
-        <View style={styles.ambientBottomGlow} />
+        {/* CUSTOM IN-GAME NOTIFICATION TOAST (REPLACES SYSTEM ALERTS) */}
+        <GameNotificationBanner
+          notification={notification}
+          onDismiss={() => setNotification(null)}
+        />
 
         {!user ? (
-          <AuthScreen onLoginSuccess={(profile) => setUser(profile)} />
+          <AuthScreen
+            onLoginSuccess={(profile, restoredData) => {
+              setUser(profile);
+              if (restoredData) {
+                setBalance(restoredData.balance);
+                setInventory(restoredData.inventory);
+                if (restoredData.quests && restoredData.quests.length > 0) {
+                  setQuests(restoredData.quests);
+                }
+                setEloRating(restoredData.eloRating);
+                setStreakDay(restoredData.streakDay);
+                setLastClaimDate(restoredData.lastClaimDate);
+              } else {
+                setBalance(25.0);
+                setInventory([]);
+                setQuests(INITIAL_QUESTS);
+                setEloRating(1000);
+              }
+              showNotify(
+                `Добро пожаловать, ${profile.nickname}!`,
+                'Аккаунт защищён паролем и синхронизирован с облачным кодом CS2 Drop.',
+                'success'
+              );
+            }}
+          />
         ) : (
           <>
             {/* TOP MODERN HEADER */}
-            <View style={styles.topHeader}>
+            <View
+              style={[
+                styles.topHeader,
+                {
+                  backgroundColor: theme.headerBg,
+                  borderColor: theme.cardBorder,
+                },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.profileChip}
                 onPress={() => setActiveTab('profile')}
@@ -279,7 +472,9 @@ export default function App() {
                   style={styles.avatarMini}
                 />
                 <View>
-                  <Text style={styles.brandName}>{user.nickname}</Text>
+                  <Text style={[styles.brandName, { color: theme.textPrimary }]}>
+                    {user.nickname}
+                  </Text>
                   <View
                     style={[
                       styles.headerRankBadge,
@@ -303,8 +498,8 @@ export default function App() {
                   style={[
                     styles.plusMoneyBtn,
                     canClaimDaily && {
-                      borderColor: '#FFD700',
-                      backgroundColor: 'rgba(255, 215, 0, 0.2)',
+                      borderColor: '#F59E0B',
+                      backgroundColor: 'rgba(245, 158, 11, 0.2)',
                     },
                   ]}
                   onPress={() => setDailyModalOpen(true)}
@@ -312,39 +507,80 @@ export default function App() {
                   <Ionicons
                     name="gift"
                     size={16}
-                    color={canClaimDaily ? '#FFD700' : '#94A3B8'}
+                    color={canClaimDaily ? '#F59E0B' : theme.textSecondary}
                   />
                 </TouchableOpacity>
 
                 <View style={styles.walletPill}>
-                  <Ionicons name="wallet-outline" size={14} color="#34D399" />
+                  <Ionicons name="wallet-outline" size={14} color="#059669" />
                   <Text style={styles.walletAmount}>${balance.toFixed(2)}</Text>
                 </View>
               </View>
             </View>
 
+            {/* BANKRUPTCY WARNING & RECOVERY BANNER */}
+            {isBankrupt && (
+              <View style={styles.bankruptBanner}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bankruptTitle}>
+                    🚨 ВЫ ОБАНКРОТИЛИСЬ (БАЛАНС $0, СКЛАД ПУСТ)!
+                  </Text>
+                  <Text style={styles.bankruptSub}>
+                    Отправляйтесь в Цех Сборки Кейсов (+$0.50 за клик) или возьмите микро-субсидию!
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.bankruptActionBtn}
+                  onPress={() => {
+                    playClickSound();
+                    setRequestedMiniGame('clicker');
+                    setActiveTab('minigames');
+                  }}
+                >
+                  <Text style={styles.bankruptActionText}>В ЦЕХ (+$0.50)</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* RECENT LIVE DROPS TICKER */}
-            {inventory.length > 0 && (
-              <View style={styles.liveTickerBar}>
+            {showLiveTicker && inventory.length > 0 && (
+              <View
+                style={[
+                  styles.liveTickerBar,
+                  {
+                    backgroundColor: theme.surfaceBg,
+                    borderColor: theme.cardBorder,
+                  },
+                ]}
+              >
                 <View style={styles.liveDotBadge}>
                   <View style={styles.liveDot} />
                   <Text style={styles.liveText}>DROP</Text>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {inventory.slice(0, 8).map((drop) => {
+                  {inventory.slice(0, 10).map((drop) => {
                     const r = RARITIES[drop.rarity];
                     return (
                       <TouchableOpacity
                         key={drop.instanceId}
                         onPress={() => setInspectedSkin(drop)}
-                        style={[styles.tickerItem, { borderColor: r.color }]}
+                        style={[
+                          styles.tickerItem,
+                          {
+                            borderColor: r.color,
+                            backgroundColor: theme.isLight ? '#FFFFFF' : '#0F172A',
+                          },
+                        ]}
                       >
                         <Image
                           source={{ uri: drop.image }}
                           style={styles.tickerImg}
                           resizeMode="contain"
                         />
-                        <Text numberOfLines={1} style={styles.tickerName}>
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.tickerName, { color: theme.textPrimary }]}
+                        >
                           {drop.name}
                         </Text>
                       </TouchableOpacity>
@@ -357,23 +593,31 @@ export default function App() {
             {/* MAIN CONTENT SCROLL */}
             <ScrollView
               style={styles.mainScroll}
-              contentContainerStyle={{ paddingBottom: 110 }}
+              contentContainerStyle={{ paddingBottom: 112 }}
               showsVerticalScrollIndicator={false}
             >
-              {/* ==================== TAB 1: CASES (BENTO 2x2 GRID) ==================== */}
+              {/* ==================== TAB 1: CASES (60 CASES ACROSS 4 TABS) ==================== */}
               {activeTab === 'cases' && (
                 <View>
                   {/* Featured Hero Showcase */}
                   <TouchableOpacity
                     activeOpacity={0.9}
-                    onPress={() => setViewingCaseDetails(INITIAL_CASES[5])}
+                    onPress={() => {
+                      setRequestedMiniGame('casebattle');
+                      setActiveTab('minigames');
+                    }}
                   >
                     <LiquidGlassCard
-                      glowColor="rgba(245, 158, 11, 0.35)"
+                      themeMode={themeMode}
+                      glowColor="#F59E0B"
                       style={styles.heroCard}
                     >
                       <LinearGradient
-                        colors={['rgba(245, 158, 11, 0.20)', 'rgba(168, 85, 247, 0.12)', 'transparent']}
+                        colors={[
+                          'rgba(245, 158, 11, 0.24)',
+                          'rgba(56, 189, 248, 0.16)',
+                          'transparent',
+                        ]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={StyleSheet.absoluteFillObject}
@@ -381,22 +625,61 @@ export default function App() {
                       <View style={styles.heroContentRow}>
                         <View style={{ flex: 1 }}>
                           <View style={styles.seasonBadge}>
-                            <Ionicons name="sparkles" size={11} color="#FBBF24" />
-                            <Text style={styles.seasonBadgeText}>BLACK MARKET EXCLUSIVE</Text>
+                            <Ionicons name="flame" size={11} color="#D97706" />
+                            <Text style={styles.seasonBadgeText}>
+                              GLOBAL UPDATE 2.0 • 60 КЕЙСОВ И 1,145 СКИНОВ
+                            </Text>
                           </View>
-                          <Text style={styles.heroTitle}>Dragon Lore & Karambit Sapphire</Text>
-                          <Text style={styles.heroSubtitle}>
-                            Реальные 3D-рендеры Steam • Осмотр скинов и стикеров
+                          <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>
+                            ⚔️ Новая игра: Битва Кейсов с Ботами!
+                          </Text>
+                          <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
+                            Режимы: Терминал, Реверс, Клатч и Общий дроп • Нажми чтобы войти!
                           </Text>
                         </View>
                         <Image
-                          source={{ uri: INITIAL_CASES[5]?.items[7]?.image || INITIAL_CASES[0].image }}
+                          source={{
+                            uri:
+                              INITIAL_CASES[0]?.items[INITIAL_CASES[0].items.length - 1]
+                                ?.image || INITIAL_CASES[0].image,
+                          }}
                           style={styles.heroSkinImg}
                           resizeMode="contain"
                         />
                       </View>
                     </LiquidGlassCard>
                   </TouchableOpacity>
+
+                  {/* Fast Spin Quick Toggle Bar */}
+                  <View style={styles.quickToolbar}>
+                    <Text style={[styles.caseCountBadgeText, { color: theme.textSecondary }]}>
+                      Доступно в разделе: {filteredCases.length} шт. (Всего: {INITIAL_CASES.length})
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        playClickSound();
+                        setFastSpin((v) => !v);
+                      }}
+                      style={[
+                        styles.fastSpinTogglePill,
+                        fastSpin && styles.fastSpinTogglePillActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name="flash"
+                        size={13}
+                        color={fastSpin ? '#0F172A' : '#D97706'}
+                      />
+                      <Text
+                        style={[
+                          styles.fastSpinToggleText,
+                          fastSpin && { color: '#0F172A' },
+                        ]}
+                      >
+                        {fastSpin ? '⚡ Быстрое открытие: ВКЛ' : '⚡ Быстрое открытие'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
                   {/* 4 Catalog Segmented Pills */}
                   <ScrollView
@@ -407,27 +690,27 @@ export default function App() {
                     {[
                       {
                         key: 'base_cases',
-                        title: 'Базовые кейсы',
+                        title: 'Базовые кейсы (19)',
                         icon: 'cube-outline' as const,
-                        accent: '#38BDF8',
+                        accent: '#0284C7',
                       },
                       {
                         key: 'black_market',
-                        title: 'Чёрный рынок',
+                        title: 'Чёрный рынок (15)',
                         icon: 'skull-outline' as const,
-                        accent: '#F59E0B',
+                        accent: '#D97706',
                       },
                       {
                         key: 'capsules',
-                        title: 'Капсулы',
+                        title: 'Капсулы (14)',
                         icon: 'pricetag-outline' as const,
-                        accent: '#EC4899',
+                        accent: '#DB2777',
                       },
                       {
                         key: 'souvenir',
-                        title: 'Сувенирные',
+                        title: 'Сувенирные (12)',
                         icon: 'trophy-outline' as const,
-                        accent: '#EAB308',
+                        accent: '#CA8A04',
                       },
                     ].map((cat) => {
                       const active = catalogCategory === cat.key;
@@ -437,18 +720,24 @@ export default function App() {
                           onPress={() => setCatalogCategory(cat.key as CatalogCategory)}
                           style={[
                             styles.catChip,
-                            active && {
-                              backgroundColor: 'rgba(255, 255, 255, 0.11)',
-                              borderColor: cat.accent,
+                            {
+                              backgroundColor: theme.surfaceBg,
+                              borderColor: active ? cat.accent : theme.cardBorder,
                             },
+                            active && { borderWidth: 1.8 },
                           ]}
                         >
                           <Ionicons
                             name={cat.icon}
                             size={15}
-                            color={active ? cat.accent : '#64748B'}
+                            color={active ? cat.accent : theme.textMuted}
                           />
-                          <Text style={[styles.catChipText, active && styles.catChipTextActive]}>
+                          <Text
+                            style={[
+                              styles.catChipText,
+                              { color: active ? theme.textPrimary : theme.textSecondary },
+                            ]}
+                          >
                             {cat.title}
                           </Text>
                         </TouchableOpacity>
@@ -466,29 +755,46 @@ export default function App() {
                         style={styles.bentoCaseTile}
                       >
                         <LiquidGlassCard
-                          glowColor="rgba(255,255,255,0.10)"
+                          themeMode={themeMode}
+                          glowColor={`${caseObj.accentColor}66`}
                           style={styles.bentoInner}
                         >
                           <LinearGradient
                             colors={[
-                              `${caseObj.accentColor}26`,
-                              'rgba(15, 23, 42, 0.4)',
-                              'rgba(10, 14, 26, 0.95)',
+                              `${caseObj.accentColor}28`,
+                              theme.isLight
+                                ? 'rgba(255, 255, 255, 0.85)'
+                                : 'rgba(15, 23, 42, 0.75)',
+                              theme.isLight
+                                ? 'rgba(241, 245, 249, 0.95)'
+                                : 'rgba(10, 14, 26, 0.95)',
                             ]}
                             style={StyleSheet.absoluteFillObject}
                           />
 
-                          {/* Top item count & preview button */}
                           <View style={styles.bentoTopRow}>
-                            <View style={styles.itemCountPill}>
-                              <Text style={styles.itemCountText}>
+                            <View
+                              style={[
+                                styles.itemCountPill,
+                                theme.isLight && { backgroundColor: 'rgba(15,23,42,0.07)' },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.itemCountText,
+                                  { color: theme.textSecondary },
+                                ]}
+                              >
                                 {caseObj.items.length} скинов
                               </Text>
                             </View>
-                            <Ionicons name="eye-outline" size={15} color="#94A3B8" />
+                            <Ionicons
+                              name="eye-outline"
+                              size={15}
+                              color={theme.textSecondary}
+                            />
                           </View>
 
-                          {/* Floating Case Image */}
                           <View style={styles.bentoImgWrap}>
                             <Image
                               source={{ uri: caseObj.image }}
@@ -497,14 +803,19 @@ export default function App() {
                             />
                           </View>
 
-                          <Text numberOfLines={1} style={styles.bentoCaseTitle}>
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.bentoCaseTitle, { color: theme.textPrimary }]}
+                          >
                             {caseObj.name.replace('Кейс ', '').replace('Капсула ', '')}
                           </Text>
-                          <Text numberOfLines={1} style={styles.bentoCaseSub}>
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.bentoCaseSub, { color: theme.textSecondary }]}
+                          >
                             {caseObj.subtitle}
                           </Text>
 
-                          {/* Price & Quick Open Button */}
                           <TouchableOpacity
                             style={[
                               styles.bentoOpenBtn,
@@ -526,23 +837,39 @@ export default function App() {
               {/* ==================== TAB 2: INVENTORY & 3D INSPECT ==================== */}
               {activeTab === 'inventory' && (
                 <View>
-                  <LiquidGlassCard style={styles.invSummaryCard}>
+                  <LiquidGlassCard themeMode={themeMode} style={styles.invSummaryCard}>
                     <View style={styles.invSummaryRow}>
                       <View>
-                        <Text style={styles.invTotalLabel}>
-                          ПРЕДМЕТОВ В ИНВЕНТАРЕ: {inventory.length}
+                        <Text style={[styles.invTotalLabel, { color: theme.textSecondary }]}>
+                          ПРЕДМЕТОВ НА СКЛАДЕ: {inventory.length}
                         </Text>
-                        <Text style={styles.invTotalValue}>
+                        <Text style={[styles.invTotalValue, { color: theme.textPrimary }]}>
                           ${totalInventoryValue.toFixed(2)}
                         </Text>
                       </View>
-                      <TouchableOpacity
-                        style={styles.sellAllCheapBtn}
-                        onPress={handleSellAllCheap}
-                      >
-                        <Ionicons name="flash-outline" size={14} color="#FCA5A5" />
-                        <Text style={styles.sellAllCheapText}>Продать ширпотреб</Text>
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        <TouchableOpacity
+                          style={styles.sellAllCheapBtn}
+                          onPress={handleSellAllCheap}
+                        >
+                          <Ionicons name="flash-outline" size={14} color="#EF4444" />
+                          <Text style={styles.sellAllCheapText}>Слить синьку</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.sellAllCheapBtn,
+                            {
+                              borderColor: '#10B981',
+                              backgroundColor: 'rgba(16,185,129,0.14)',
+                            },
+                          ]}
+                          onPress={handleSellEntireInventory}
+                        >
+                          <Text style={[styles.sellAllCheapText, { color: '#059669' }]}>
+                            Продать всё
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
                     {/* Rarity Filter */}
@@ -562,7 +889,15 @@ export default function App() {
                             invFilter === rKey && styles.filterChipActive,
                           ]}
                         >
-                          <Text style={styles.filterChipText}>
+                          <Text
+                            style={[
+                              styles.filterChipText,
+                              {
+                                color:
+                                  invFilter === rKey ? '#0284C7' : theme.textSecondary,
+                              },
+                            ]}
+                          >
                             {rKey === 'all' ? 'Все' : RARITIES[rKey].name}
                           </Text>
                         </TouchableOpacity>
@@ -572,9 +907,9 @@ export default function App() {
 
                   {filteredInventory.length === 0 ? (
                     <View style={styles.emptyBox}>
-                      <Ionicons name="cube-outline" size={42} color="#334155" />
-                      <Text style={styles.emptyText}>
-                        Инвентарь пока пуст. Открой кейс, чтобы выбить свой первый скин!
+                      <Ionicons name="cube-outline" size={44} color={theme.textMuted} />
+                      <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                        Склад пока пуст. Откройте кейс или сразитесь с ботами в Битве Кейсов!
                       </Text>
                     </View>
                   ) : (
@@ -583,6 +918,7 @@ export default function App() {
                         <SkinCard
                           key={item.instanceId}
                           item={item}
+                          themeMode={themeMode}
                           onPress={() => setInspectedSkin(item)}
                           actionLabel={`Продать $${item.price.toFixed(2)}`}
                           onAction={() => handleSellItem(item)}
@@ -593,25 +929,37 @@ export default function App() {
                 </View>
               )}
 
-              {/* ==================== TAB 3: MINI-GAMES ==================== */}
+              {/* ==================== TAB 3: MINI-GAMES & CASE BATTLE ==================== */}
               {activeTab === 'minigames' && (
                 <MiniGamesHub
                   balance={balance}
                   inventory={inventory}
+                  themeMode={themeMode}
+                  defaultFastSpin={fastSpin}
+                  initialGame={requestedMiniGame}
                   onChangeBalance={(delta) => setBalance((b) => Number((b + delta).toFixed(2)))}
                   onAddInventoryItem={(item) => setInventory((prev) => [item, ...prev])}
+                  onAddMultipleItems={(items) => setInventory((prev) => [...items, ...prev])}
                   onRemoveInventoryItems={(ids) =>
                     setInventory((prev) => prev.filter((i) => !ids.includes(i.instanceId)))
                   }
                   onRecordGameWin={(isUpgrade) => {
-                    setEloRating((e) => e + (isUpgrade ? 260 : 180));
+                    setEloRating((e) => e + (isUpgrade ? 220 : 140));
                     incrementQuest('win_games', 1);
                     if (isUpgrade) incrementQuest('upgrade_win', 1);
                   }}
+                  onRecordBattlePlayed={(won) => {
+                    if (won) {
+                      setEloRating((e) => e + 280);
+                      incrementQuest('win_case_battle', 1);
+                      incrementQuest('win_games', 1);
+                    }
+                  }}
+                  onNotify={showNotify}
                 />
               )}
 
-              {/* ==================== TAB 4: QUESTS ==================== */}
+              {/* ==================== TAB 4: UPGRADED MULTI-TIER QUESTS ==================== */}
               {activeTab === 'quests' && (
                 <View>
                   <TouchableOpacity
@@ -619,41 +967,128 @@ export default function App() {
                     onPress={() => setDailyModalOpen(true)}
                   >
                     <LiquidGlassCard
-                      glowColor="#FFD700"
+                      themeMode={themeMode}
+                      glowColor="#F59E0B"
                       style={{ padding: 14, marginBottom: 14 }}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <Ionicons name="gift" size={24} color="#FFD700" />
+                        <Ionicons name="gift" size={24} color="#D97706" />
                         <View style={{ flex: 1 }}>
-                          <Text style={{ color: '#FFD700', fontWeight: '900', fontSize: 13 }}>
+                          <Text style={{ color: '#D97706', fontWeight: '900', fontSize: 13 }}>
                             ЕЖЕДНЕВНАЯ НАГРАДА (ДЕНЬ {streakDay} ИЗ 7)
                           </Text>
-                          <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                          <Text
+                            style={{
+                              color: theme.textSecondary,
+                              fontSize: 11,
+                              marginTop: 2,
+                            }}
+                          >
                             {canClaimDaily
-                              ? 'Нажми здесь, чтобы забрать сегодняшний денежный бонус!'
-                              : 'Бонус на сегодня получен — возвращайся завтра!'}
+                              ? 'Нажмите здесь, чтобы забрать сегодняшний бонус!'
+                              : 'Бонус на сегодня получен — возвращайтесь завтра!'}
                           </Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={18} color="#FFD700" />
+                        <Ionicons name="chevron-forward" size={18} color="#D97706" />
                       </View>
                     </LiquidGlassCard>
                   </TouchableOpacity>
 
-                  <Text style={styles.sectionHeader}>Задания и Бонусы</Text>
-                  {quests.map((q) => {
+                  <Text style={[styles.sectionHeader, { color: theme.textPrimary }]}>
+                    Система Контрактов и Миссий CS2
+                  </Text>
+
+                  {/* Quest Difficulty Tabs */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={{ marginBottom: 12 }}
+                  >
+                    {(
+                      [
+                        { id: 'all', label: 'Все миссии' },
+                        { id: 'daily', label: 'Ежедневные' },
+                        { id: 'battle', label: 'Боевые (Битвы/Игры)' },
+                        { id: 'collector', label: 'Коллекционер' },
+                        { id: 'hardcore', label: '🔥 Хардкор' },
+                      ] as const
+                    ).map((qf) => (
+                      <TouchableOpacity
+                        key={qf.id}
+                        onPress={() => setQuestFilter(qf.id)}
+                        style={[
+                          styles.filterChip,
+                          questFilter === qf.id && styles.filterChipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            {
+                              color:
+                                questFilter === qf.id ? '#0284C7' : theme.textSecondary,
+                            },
+                          ]}
+                        >
+                          {qf.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  {filteredQuests.map((q) => {
                     const completed = q.progress >= q.target;
                     const pct = Math.min(100, Math.round((q.progress / q.target) * 100));
+                    const diffColors: Record<QuestDifficulty, string> = {
+                      daily: '#0284C7',
+                      battle: '#F59E0B',
+                      collector: '#A855F7',
+                      hardcore: '#EF4444',
+                    };
+                    const diffLabels: Record<QuestDifficulty, string> = {
+                      daily: 'ЕЖЕДНЕВНОЕ',
+                      battle: 'БОЕВОЕ ИСПЫТАНИЕ',
+                      collector: 'КОЛЛЕКЦИЯ',
+                      hardcore: 'ХАРДКОР',
+                    };
+                    const badgeCol = diffColors[q.difficulty] || '#0284C7';
+
                     return (
-                      <LiquidGlassCard key={q.id} style={styles.questCard}>
+                      <LiquidGlassCard
+                        key={q.id}
+                        themeMode={themeMode}
+                        style={styles.questCard}
+                      >
                         <View style={styles.questRow}>
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.questTitle}>{q.title}</Text>
-                            <Text style={styles.questDesc}>{q.description}</Text>
-                            <View style={styles.questBarBg}>
-                              <View style={[styles.questBarFill, { width: `${pct}%` }]} />
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View
+                                style={[
+                                  styles.questDiffBadge,
+                                  { backgroundColor: `${badgeCol}22`, borderColor: badgeCol },
+                                ]}
+                              >
+                                <Text style={[styles.questDiffText, { color: badgeCol }]}>
+                                  {diffLabels[q.difficulty]}
+                                </Text>
+                              </View>
                             </View>
-                            <Text style={styles.questProg}>
-                              Выполнено: {q.progress} из {q.target}
+                            <Text style={[styles.questTitle, { color: theme.textPrimary }]}>
+                              {q.title}
+                            </Text>
+                            <Text style={[styles.questDesc, { color: theme.textSecondary }]}>
+                              {q.description}
+                            </Text>
+                            <View style={styles.questBarBg}>
+                              <View
+                                style={[
+                                  styles.questBarFill,
+                                  { width: `${pct}%`, backgroundColor: badgeCol },
+                                ]}
+                              />
+                            </View>
+                            <Text style={[styles.questProg, { color: theme.textMuted }]}>
+                              Прогресс: {q.progress} / {q.target} ({pct}%)
                             </Text>
                           </View>
                           <TouchableOpacity
@@ -667,7 +1102,7 @@ export default function App() {
                           >
                             <Text style={styles.questBtnText}>
                               {q.claimed
-                                ? 'ГОТОВО'
+                                ? 'ПОЛУЧЕНО'
                                 : completed
                                 ? `ЗАБРАТЬ +$${q.reward}`
                                 : `+$${q.reward}`}
@@ -683,18 +1118,19 @@ export default function App() {
               {/* ==================== TAB 5: PROFILE & LEADERBOARD ==================== */}
               {activeTab === 'profile' && (
                 <View>
-                  <LiquidGlassCard style={styles.profileCard}>
+                  <LiquidGlassCard themeMode={themeMode} style={styles.profileCard}>
                     <View style={[styles.avatarCircle, { backgroundColor: user.avatarColor }]}>
                       <Text style={styles.avatarLetter}>
                         {user.nickname[0]?.toUpperCase() || 'P'}
                       </Text>
                     </View>
-                    <Text style={styles.profileNick}>{user.nickname}</Text>
-                    <Text style={styles.profileEmail}>
-                      {user.provider.toUpperCase()} • {user.email}
+                    <Text style={[styles.profileNick, { color: theme.textPrimary }]}>
+                      {user.nickname}
+                    </Text>
+                    <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>
+                      ✅ ПОДТВЕРЖДЁН • {user.email}
                     </Text>
 
-                    {/* Premier Rank & Progress Bar */}
                     <View
                       style={[
                         styles.premierCardBox,
@@ -710,7 +1146,7 @@ export default function App() {
                         >
                           {rankData.current.title}
                         </Text>
-                        <Text style={styles.premierEloVal}>
+                        <Text style={[styles.premierEloVal, { color: theme.textPrimary }]}>
                           {eloRating.toLocaleString()} CS RATING
                         </Text>
                       </View>
@@ -725,7 +1161,7 @@ export default function App() {
                           ]}
                         />
                       </View>
-                      <Text style={styles.premierNextHint}>
+                      <Text style={[styles.premierNextHint, { color: theme.textSecondary }]}>
                         {rankData.next
                           ? `До звания «${rankData.next.title}»: ещё ${(
                               rankData.next.minElo - eloRating
@@ -737,51 +1173,48 @@ export default function App() {
                     <View style={styles.statsGrid}>
                       <View style={styles.statBox}>
                         <Text style={styles.statVal}>${balance.toFixed(2)}</Text>
-                        <Text style={styles.statLbl}>Баланс</Text>
+                        <Text style={[styles.statLbl, { color: theme.textSecondary }]}>
+                          Баланс
+                        </Text>
                       </View>
                       <View style={styles.statBox}>
                         <Text style={styles.statVal}>{inventory.length}</Text>
-                        <Text style={styles.statLbl}>Предметов</Text>
+                        <Text style={[styles.statLbl, { color: theme.textSecondary }]}>
+                          Предметов
+                        </Text>
                       </View>
                       <View style={styles.statBox}>
                         <Text style={styles.statVal}>${totalInventoryValue.toFixed(2)}</Text>
-                        <Text style={styles.statLbl}>Инвентарь</Text>
+                        <Text style={[styles.statLbl, { color: theme.textSecondary }]}>
+                          Инвентарь
+                        </Text>
                       </View>
                     </View>
 
                     <TouchableOpacity
-                      style={styles.settingBtn}
-                      onPress={() => {
-                        const next = !soundOn;
-                        setSoundOn(next);
-                        setSoundEnabled(next);
-                      }}
+                      style={[styles.settingBtn, { borderColor: theme.cardBorder }]}
+                      onPress={() => setActiveTab('settings')}
                     >
-                      <Ionicons
-                        name={soundOn ? 'volume-high-outline' : 'volume-mute-outline'}
-                        size={18}
-                        color="#38BDF8"
-                      />
-                      <Text style={styles.settingBtnText}>
-                        Звуковые эффекты CS2: {soundOn ? 'ВКЛЮЧЕНЫ' : 'ВЫКЛЮЧЕНЫ'}
+                      <Ionicons name="settings-outline" size={18} color="#0284C7" />
+                      <Text style={[styles.settingBtnText, { color: theme.textPrimary }]}>
+                        Открыть Настройки Темы и Синхронизации →
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[
                         styles.settingBtn,
-                        { borderColor: 'rgba(239,68,68,0.4)', marginTop: 10 },
+                        { borderColor: 'rgba(239,68,68,0.45)', marginTop: 10 },
                       ]}
                       onPress={() => setUser(null)}
                     >
-                      <Ionicons name="log-out-outline" size={18} color="#F87171" />
-                      <Text style={[styles.settingBtnText, { color: '#F87171' }]}>
-                        Сменить аккаунт (Google / Яндекс / Mail.ru)
+                      <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+                      <Text style={[styles.settingBtnText, { color: '#EF4444' }]}>
+                        Выйти или сменить аккаунт
                       </Text>
                     </TouchableOpacity>
                   </LiquidGlassCard>
 
-                  {/* World & Friends Collectors Leaderboard */}
                   <LeaderboardSection
                     playerNickname={user.nickname}
                     playerElo={eloRating}
@@ -794,30 +1227,280 @@ export default function App() {
                   />
                 </View>
               )}
+
+              {/* ==================== TAB 6: SETTINGS (НАСТРОЙКИ ТЕМЫ И ИГРЫ) ==================== */}
+              {activeTab === 'settings' && (
+                <View>
+                  <LiquidGlassCard themeMode={themeMode} style={styles.settingsCard}>
+                    <Text style={[styles.sectionHeader, { color: theme.textPrimary }]}>
+                      ⚙️ Настройки Интерфейса и Игры
+                    </Text>
+
+                    <Text style={[styles.settingsSubTitle, { color: theme.textSecondary }]}>
+                      1. ВЫБОР ФОНА И ТЕМЫ ОФОРМЛЕНИЯ:
+                    </Text>
+                    {(Object.values(THEMES) as (typeof THEMES)['bright'][]).map((t) => {
+                      const active = themeMode === t.id;
+                      return (
+                        <TouchableOpacity
+                          key={t.id}
+                          onPress={() => {
+                            playClickSound();
+                            setThemeMode(t.id);
+                            showNotify(
+                              `Тема изменена: ${t.name}`,
+                              t.subtitle,
+                              'info'
+                            );
+                          }}
+                          style={[
+                            styles.themeOptionRow,
+                            {
+                              borderColor: active ? '#0284C7' : theme.cardBorder,
+                              backgroundColor: active
+                                ? 'rgba(2, 132, 199, 0.14)'
+                                : theme.surfaceBg,
+                            },
+                          ]}
+                        >
+                          <View
+                            style={[
+                              styles.themePreviewDot,
+                              { backgroundColor: t.bgGradient[1] },
+                            ]}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.themeOptionTitle,
+                                { color: theme.textPrimary },
+                              ]}
+                            >
+                              {t.name}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.themeOptionSub,
+                                { color: theme.textSecondary },
+                              ]}
+                            >
+                              {t.subtitle}
+                            </Text>
+                          </View>
+                          <Ionicons
+                            name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={22}
+                            color={active ? '#0284C7' : theme.textMuted}
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+
+                    <Text
+                      style={[
+                        styles.settingsSubTitle,
+                        { color: theme.textSecondary, marginTop: 14 },
+                      ]}
+                    >
+                      2. ПАРАМЕТРЫ ОТКРЫТИЯ КЕЙСОВ И ЗВУКА:
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[styles.toggleSettingRow, { borderColor: theme.cardBorder }]}
+                      onPress={() => {
+                        playClickSound();
+                        setFastSpin((v) => !v);
+                      }}
+                    >
+                      <Ionicons name="flash" size={20} color="#F59E0B" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.toggleTitle, { color: theme.textPrimary }]}>
+                          ⚡ Быстрое открытие кейсов (x2.5 скорость)
+                        </Text>
+                        <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>
+                          Ускоряет анимацию рулетки кейсов и битвы кейсов без пропуска
+                        </Text>
+                      </View>
+                      <Text
+                        style={{
+                          color: fastSpin ? '#10B981' : theme.textMuted,
+                          fontWeight: '900',
+                        }}
+                      >
+                        {fastSpin ? 'ВКЛ' : 'ВЫКЛ'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.toggleSettingRow, { borderColor: theme.cardBorder }]}
+                      onPress={() => {
+                        const next = !soundOn;
+                        setSoundOn(next);
+                        setSoundEnabled(next);
+                      }}
+                    >
+                      <Ionicons
+                        name={soundOn ? 'volume-high' : 'volume-mute'}
+                        size={20}
+                        color="#0284C7"
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.toggleTitle, { color: theme.textPrimary }]}>
+                          🔊 Звуковые эффекты CS2
+                        </Text>
+                        <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>
+                          Щелчки рулетки, звуки выпадения тайного и ножей
+                        </Text>
+                      </View>
+                      <Text
+                        style={{
+                          color: soundOn ? '#10B981' : theme.textMuted,
+                          fontWeight: '900',
+                        }}
+                      >
+                        {soundOn ? 'ВКЛ' : 'ВЫКЛ'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.toggleSettingRow, { borderColor: theme.cardBorder }]}
+                      onPress={() => setShowLiveTicker((v) => !v)}
+                    >
+                      <Ionicons name="pulse" size={20} color="#10B981" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.toggleTitle, { color: theme.textPrimary }]}>
+                          📡 Живая лента недавнего дропа
+                        </Text>
+                        <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>
+                          Показывать полосу последних выбитых предметов сверху экрана
+                        </Text>
+                      </View>
+                      <Text
+                        style={{
+                          color: showLiveTicker ? '#10B981' : theme.textMuted,
+                          fontWeight: '900',
+                        }}
+                      >
+                        {showLiveTicker ? 'ВКЛ' : 'ВЫКЛ'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Cloud Sync Export / Import Section */}
+                    <Text
+                      style={[
+                        styles.settingsSubTitle,
+                        { color: theme.textSecondary, marginTop: 16 },
+                      ]}
+                    >
+                      3. КРОСС-ДЕВАЙС СИНХРОНИЗАЦИЯ ПРОГРЕССА ({user.email}):
+                    </Text>
+                    <Text style={[styles.toggleSub, { color: theme.textSecondary, marginBottom: 6 }]}>
+                      Скопируйте этот код синхронизации, чтобы перенести свой баланс, звание и все скины на другое устройство:
+                    </Text>
+                    <TextInput
+                      value={currentSyncToken}
+                      editable={false}
+                      selectTextOnFocus
+                      style={[
+                        styles.syncCodeBox,
+                        { color: theme.textPrimary, borderColor: theme.cardBorder },
+                      ]}
+                    />
+
+                    <Text
+                      style={[
+                        styles.toggleSub,
+                        { color: theme.textSecondary, marginTop: 10, marginBottom: 6 },
+                      ]}
+                    >
+                      Или вставьте код синхронизации с другого устройства:
+                    </Text>
+                    <TextInput
+                      placeholder="Вставьте код CS2SYNC-..."
+                      placeholderTextColor="#64748B"
+                      value={importSyncInput}
+                      onChangeText={setImportSyncInput}
+                      style={[
+                        styles.syncCodeBox,
+                        { color: theme.textPrimary, borderColor: theme.cardBorder },
+                      ]}
+                    />
+                    <TouchableOpacity
+                      style={styles.syncImportBtn}
+                      onPress={() => {
+                        const decoded = decodeCloudSyncToken(importSyncInput);
+                        if (!decoded) {
+                          showNotify(
+                            'Ошибка кода синхронизации',
+                            'Проверьте, что код начинается с CS2SYNC-',
+                            'error'
+                          );
+                          return;
+                        }
+                        setUser(decoded.profile);
+                        setBalance(decoded.balance);
+                        setInventory(decoded.inventory);
+                        setEloRating(decoded.eloRating);
+                        setImportSyncInput('');
+                        showNotify(
+                          'Прогресс успешно синхронизирован!',
+                          `Восстановлен аккаунт ${decoded.profile.nickname} ($${decoded.balance.toFixed(2)}, скинов: ${decoded.inventory.length})`,
+                          'reward'
+                        );
+                      }}
+                    >
+                      <Ionicons name="cloud-download-outline" size={16} color="#FFFFFF" />
+                      <Text style={styles.syncImportBtnText}>
+                        ЗАГРУЗИТЬ ПРОГРЕСС ПО КОДУ
+                      </Text>
+                    </TouchableOpacity>
+                  </LiquidGlassCard>
+                </View>
+              )}
             </ScrollView>
 
-            {/* SLEEK FLOATING VECTOR BOTTOM BAR */}
-            <View style={styles.bottomBar}>
+            {/* SLEEK FLOATING VECTOR BOTTOM BAR (6 TABS INCLUDING SETTINGS) */}
+            <View
+              style={[
+                styles.bottomBar,
+                {
+                  backgroundColor: theme.tabBarBg,
+                  borderColor: theme.cardBorder,
+                },
+              ]}
+            >
               {[
                 { key: 'cases', icon: 'grid-outline' as const, label: 'Кейсы' },
                 { key: 'inventory', icon: 'briefcase-outline' as const, label: 'Склад' },
                 { key: 'minigames', icon: 'game-controller-outline' as const, label: 'Игры' },
                 { key: 'quests', icon: 'ribbon-outline' as const, label: 'Миссии' },
                 { key: 'profile', icon: 'person-outline' as const, label: 'Профиль' },
+                { key: 'settings', icon: 'settings-outline' as const, label: 'Настройки' },
               ].map((item) => {
                 const active = activeTab === item.key;
                 return (
                   <TouchableOpacity
                     key={item.key}
-                    onPress={() => setActiveTab(item.key as BottomNavTab)}
+                    onPress={() => {
+                      playClickSound();
+                      if (item.key === 'minigames') {
+                        setRequestedMiniGame('lobby');
+                      }
+                      setActiveTab(item.key as BottomNavTab);
+                    }}
                     style={[styles.navItem, active && styles.navItemActive]}
                   >
                     <Ionicons
                       name={item.icon}
-                      size={20}
-                      color={active ? '#38BDF8' : '#64748B'}
+                      size={19}
+                      color={active ? '#0284C7' : theme.textMuted}
                     />
-                    <Text style={[styles.navLabel, active && styles.navLabelActive]}>
+                    <Text
+                      style={[
+                        styles.navLabel,
+                        { color: active ? '#0284C7' : theme.textMuted },
+                      ]}
+                    >
                       {item.label}
                     </Text>
                   </TouchableOpacity>
@@ -832,6 +1515,7 @@ export default function App() {
           <View style={styles.modalBackdrop}>
             {viewingCaseDetails && (
               <LiquidGlassCard
+                themeMode={themeMode}
                 glowColor={viewingCaseDetails.accentColor}
                 style={styles.caseDrawerSheet}
               >
@@ -842,18 +1526,22 @@ export default function App() {
                     resizeMode="contain"
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.drawerTitle}>{viewingCaseDetails.name}</Text>
-                    <Text style={styles.drawerSub}>{viewingCaseDetails.subtitle}</Text>
+                    <Text style={[styles.drawerTitle, { color: theme.textPrimary }]}>
+                      {viewingCaseDetails.name}
+                    </Text>
+                    <Text style={[styles.drawerSub, { color: theme.textSecondary }]}>
+                      {viewingCaseDetails.subtitle}
+                    </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.closeCircle}
                     onPress={() => setViewingCaseDetails(null)}
                   >
-                    <Ionicons name="close" size={18} color="#F8FAFC" />
+                    <Ionicons name="close" size={18} color={theme.textPrimary} />
                   </TouchableOpacity>
                 </View>
 
-                {/* Multi-Open Selector x1..x5 */}
+                {/* Multi-Open Selector x1..x5 + Fast Spin Toggle */}
                 <View style={styles.multiSelectRow}>
                   {[1, 2, 3, 4, 5].map((cnt) => {
                     const active = openMultiplier === cnt;
@@ -872,7 +1560,7 @@ export default function App() {
                         <Text
                           style={[
                             styles.multiCountText,
-                            active && { color: '#FFFFFF' },
+                            { color: active ? theme.textPrimary : theme.textSecondary },
                           ]}
                         >
                           x{cnt}
@@ -880,6 +1568,26 @@ export default function App() {
                       </TouchableOpacity>
                     );
                   })}
+
+                  <TouchableOpacity
+                    onPress={() => setFastSpin((v) => !v)}
+                    style={[
+                      styles.multiCountBtn,
+                      fastSpin && {
+                        backgroundColor: 'rgba(250, 204, 21, 0.28)',
+                        borderColor: '#F59E0B',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.multiCountText,
+                        { color: fastSpin ? '#D97706' : theme.textSecondary },
+                      ]}
+                    >
+                      ⚡ БЫСТРО
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity
@@ -890,18 +1598,18 @@ export default function App() {
                   onPress={() => handleOpenCasePress(viewingCaseDetails, openMultiplier)}
                 >
                   <Text style={styles.drawerOpenBigText}>
-                    ОТКРЫТЬ x{openMultiplier} ЗА ${(
+                    {fastSpin ? '⚡ БЫСТРО ОТКРЫТЬ ' : 'ОТКРЫТЬ '}x{openMultiplier} ЗА ${(
                       viewingCaseDetails.price * openMultiplier
                     ).toFixed(2)}
                   </Text>
                 </TouchableOpacity>
 
-                <Text style={styles.drawerSectionLbl}>
-                  Содержимое кейса ({viewingCaseDetails.items.length} скинов • Нажми для 3D-осмотра):
+                <Text style={[styles.drawerSectionLbl, { color: theme.textSecondary }]}>
+                  Содержимое ({viewingCaseDetails.items.length} скинов • Нажмите для 3D-осмотра):
                 </Text>
 
                 <ScrollView
-                  style={{ maxHeight: 380 }}
+                  style={{ maxHeight: 370 }}
                   showsVerticalScrollIndicator={false}
                 >
                   <View style={styles.invGrid}>
@@ -909,6 +1617,7 @@ export default function App() {
                       <SkinCard
                         key={skin.id}
                         item={skin}
+                        themeMode={themeMode}
                         onPress={() =>
                           handlePreviewTemplate(skin, viewingCaseDetails.category)
                         }
@@ -921,11 +1630,13 @@ export default function App() {
           </View>
         </Modal>
 
-        {/* ROULETTE MODAL */}
+        {/* ROULETTE MODAL (WITH FAST SPIN INSTEAD OF INSTANT SKIP) */}
         <CaseRouletteModal
           visible={rouletteOpen}
           caseItem={selectedCase}
           openCount={openMultiplier}
+          fastSpin={fastSpin}
+          onToggleFastSpin={() => setFastSpin((v) => !v)}
           onClose={() => setRouletteOpen(false)}
           onCompleteDrops={handleCompleteDrops}
           onSellDrops={handleSellDrops}
@@ -957,40 +1668,19 @@ export default function App() {
 const styles = StyleSheet.create({
   desktopStage: {
     flex: 1,
-    backgroundColor: '#03050B',
     justifyContent: 'center',
     alignItems: 'center',
   },
   phoneContainer: {
-    backgroundColor: '#060914',
     position: 'relative',
-  },
-  ambientTopGlow: {
-    position: 'absolute',
-    top: -90,
-    left: -50,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
-  ambientBottomGlow: {
-    position: 'absolute',
-    bottom: 40,
-    right: -60,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(168, 85, 247, 0.10)',
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
   },
   profileChip: {
     flexDirection: 'row',
@@ -1001,24 +1691,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarMiniText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 16,
   },
   brandName: {
-    color: '#F8FAFC',
     fontSize: 15,
     fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  userSub: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
+    letterSpacing: 0.4,
   },
   headerRankBadge: {
     paddingHorizontal: 6,
@@ -1033,8 +1710,8 @@ const styles = StyleSheet.create({
   },
   premierCardBox: {
     width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1,
+    backgroundColor: 'rgba(56,189,248,0.06)',
+    borderWidth: 1.2,
     borderRadius: 14,
     padding: 12,
     marginBottom: 14,
@@ -1049,12 +1726,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   premierEloVal: {
-    color: '#F8FAFC',
     fontSize: 12,
     fontWeight: '900',
   },
   premierNextHint: {
-    color: '#64748B',
     fontSize: 10,
     fontWeight: '700',
     marginTop: 6,
@@ -1078,16 +1753,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.35)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(16, 185, 129, 0.45)',
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: 12,
   },
   walletAmount: {
-    color: '#34D399',
+    color: '#059669',
     fontSize: 14,
+    fontWeight: '900',
+  },
+  bankruptBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.16)',
+    borderBottomWidth: 1.5,
+    borderColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 10,
+  },
+  bankruptTitle: {
+    color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  bankruptSub: {
+    color: '#334155',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  bankruptActionBtn: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  bankruptActionText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '900',
   },
   liveTickerBar: {
@@ -1095,9 +1801,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.02)',
     borderBottomWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
   },
   liveDotBadge: {
     flexDirection: 'row',
@@ -1116,14 +1820,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   liveText: {
-    color: '#FCA5A5',
+    color: '#EF4444',
     fontSize: 9,
     fontWeight: '900',
   },
   tickerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 7,
@@ -1136,7 +1839,6 @@ const styles = StyleSheet.create({
     height: 18,
   },
   tickerName: {
-    color: '#E2E8F0',
     fontSize: 10,
     fontWeight: '700',
     maxWidth: 70,
@@ -1147,8 +1849,8 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   heroCard: {
-    padding: 16,
-    marginBottom: 14,
+    padding: 15,
+    marginBottom: 10,
   },
   heroContentRow: {
     flexDirection: 'row',
@@ -1159,35 +1861,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
-    marginBottom: 6,
+    marginBottom: 5,
   },
   seasonBadgeText: {
-    color: '#FBBF24',
+    color: '#D97706',
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 0.8,
   },
   heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '900',
   },
   heroSubtitle: {
-    color: '#94A3B8',
     fontSize: 11,
-    marginTop: 4,
+    fontWeight: '600',
+    marginTop: 3,
   },
   heroSkinImg: {
-    width: 115,
-    height: 78,
+    width: 105,
+    height: 74,
     marginLeft: 8,
   },
+  quickToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  caseCountBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  fastSpinTogglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+  },
+  fastSpinTogglePillActive: {
+    backgroundColor: '#FACC15',
+  },
+  fastSpinToggleText: {
+    color: '#D97706',
+    fontSize: 10,
+    fontWeight: '900',
+  },
   catalogTabsRow: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   catChip: {
     flexDirection: 'row',
@@ -1196,18 +1925,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 9,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
     marginRight: 8,
   },
   catChipText: {
-    color: '#64748B',
     fontWeight: '800',
     fontSize: 12,
-  },
-  catChipTextActive: {
-    color: '#F8FAFC',
   },
   bentoCaseGrid: {
     flexDirection: 'row',
@@ -1229,34 +1952,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   itemCountPill: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
   },
   itemCountText: {
-    color: '#94A3B8',
     fontSize: 9,
     fontWeight: '800',
   },
   bentoImgWrap: {
-    height: 102,
+    height: 98,
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 4,
   },
   bentoCaseImg: {
-    width: 120,
-    height: 94,
+    width: 118,
+    height: 90,
   },
   bentoCaseTitle: {
-    color: '#F8FAFC',
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'center',
   },
   bentoCaseSub: {
-    color: '#64748B',
     fontSize: 10,
     marginTop: 2,
     marginBottom: 10,
@@ -1282,14 +2002,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   invTotalLabel: {
-    color: '#64748B',
     fontSize: 10,
     fontWeight: '800',
   },
   invTotalValue: {
-    color: '#F8FAFC',
     fontSize: 20,
     fontWeight: '900',
     marginTop: 2,
@@ -1297,16 +2017,16 @@ const styles = StyleSheet.create({
   sellAllCheapBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(239, 68, 68, 0.16)',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.14)',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.4)',
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    borderRadius: 11,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
   },
   sellAllCheapText: {
-    color: '#FCA5A5',
+    color: '#EF4444',
     fontSize: 11,
     fontWeight: '800',
   },
@@ -1314,18 +2034,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(148, 163, 184, 0.14)',
     marginRight: 7,
   },
   filterChipActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
+    backgroundColor: 'rgba(2, 132, 199, 0.18)',
     borderWidth: 1,
-    borderColor: '#38BDF8',
+    borderColor: '#0284C7',
   },
   filterChipText: {
-    color: '#E2E8F0',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   invGrid: {
     flexDirection: 'row',
@@ -1338,15 +2057,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   emptyText: {
-    color: '#64748B',
     fontSize: 13,
     textAlign: 'center',
+    fontWeight: '600',
   },
   sectionHeader: {
-    color: '#F8FAFC',
     fontSize: 18,
     fontWeight: '900',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   questCard: {
     padding: 14,
@@ -1357,44 +2075,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  questDiffBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 5,
+    marginBottom: 3,
+  },
+  questDiffText: {
+    fontSize: 8,
+    fontWeight: '900',
+  },
   questTitle: {
-    color: '#F8FAFC',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   questDesc: {
-    color: '#64748B',
     fontSize: 11,
     marginTop: 2,
+    fontWeight: '600',
   },
   questBarBg: {
-    height: 5,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    height: 6,
+    backgroundColor: 'rgba(148,163,184,0.2)',
     borderRadius: 3,
     marginTop: 8,
     overflow: 'hidden',
   },
   questBarFill: {
     height: '100%',
-    backgroundColor: '#38BDF8',
+    backgroundColor: '#0284C7',
   },
   questProg: {
-    color: '#94A3B8',
     fontSize: 10,
     fontWeight: '700',
     marginTop: 4,
   },
   questBtn: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(148,163,184,0.25)',
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 10,
     borderRadius: 10,
   },
   questBtnReady: {
     backgroundColor: '#10B981',
   },
   questBtnClaimed: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(148,163,184,0.12)',
   },
   questBtnText: {
     color: '#FFFFFF',
@@ -1419,38 +2146,37 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   profileNick: {
-    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '900',
   },
   profileEmail: {
-    color: '#64748B',
     fontSize: 12,
+    fontWeight: '700',
     marginTop: 3,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   statsGrid: {
     flexDirection: 'row',
     width: '100%',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   statBox: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(2, 132, 199, 0.08)',
     marginHorizontal: 4,
     padding: 12,
     borderRadius: 14,
     alignItems: 'center',
   },
   statVal: {
-    color: '#38BDF8',
+    color: '#0284C7',
     fontSize: 14,
     fontWeight: '900',
   },
   statLbl: {
-    color: '#64748B',
     fontSize: 10,
+    fontWeight: '700',
     marginTop: 2,
   },
   settingBtn: {
@@ -1459,55 +2185,124 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 13,
+    paddingVertical: 12,
     borderRadius: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1.2,
   },
   settingBtnText: {
-    color: '#E2E8F0',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 12,
+  },
+  settingsCard: {
+    padding: 16,
+  },
+  settingsSubTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  themeOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginBottom: 8,
+  },
+  themePreviewDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+  },
+  themeOptionTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  themeOptionSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  toggleSettingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  toggleTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  toggleSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  syncCodeBox: {
+    borderWidth: 1.2,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: 'rgba(148,163,184,0.1)',
+  },
+  syncImportBtn: {
+    marginTop: 8,
+    backgroundColor: '#0284C7',
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  syncImportBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
   },
   bottomBar: {
     position: 'absolute',
-    bottom: 12,
-    left: 14,
-    right: 14,
+    bottom: 10,
+    left: 10,
+    right: 10,
     height: 64,
     borderRadius: 22,
-    backgroundColor: 'rgba(10, 15, 29, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1.2,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     overflow: 'hidden',
   },
   navItem: {
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 12,
   },
   navItemActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+    backgroundColor: 'rgba(2, 132, 199, 0.14)',
   },
   navLabel: {
-    color: '#64748B',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 9,
+    fontWeight: '800',
     marginTop: 2,
-  },
-  navLabelActive: {
-    color: '#38BDF8',
   },
   modalBackdrop: {
     flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    padding: 14,
   },
   caseDrawerSheet: {
     width: '100%',
@@ -1525,12 +2320,10 @@ const styles = StyleSheet.create({
     height: 56,
   },
   drawerTitle: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '900',
   },
   drawerSub: {
-    color: '#94A3B8',
     fontSize: 11,
     marginTop: 2,
   },
@@ -1538,28 +2331,27 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(148,163,184,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   multiSelectRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     marginBottom: 10,
   },
   multiCountBtn: {
     flex: 1,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(148,163,184,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(148,163,184,0.3)',
     alignItems: 'center',
   },
   multiCountText: {
-    color: '#94A3B8',
     fontWeight: '900',
-    fontSize: 13,
+    fontSize: 12,
   },
   drawerOpenBigBtn: {
     width: '100%',
@@ -1574,9 +2366,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   drawerSectionLbl: {
-    color: '#94A3B8',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     marginBottom: 10,
   },
 });

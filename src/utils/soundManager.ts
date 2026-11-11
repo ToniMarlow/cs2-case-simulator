@@ -57,6 +57,8 @@ export function playTickSound() {
   playSynthTone(880, 0.025, -240, 0.08);
 }
 
+export const playClickSound = playTickSound;
+
 export function playDropSound(isRare = false) {
   if (Platform.OS !== 'web') {
     if (isRare) {

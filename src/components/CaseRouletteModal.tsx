@@ -12,7 +12,6 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { CaseContainer, InventoryItem, RARITIES } from '../types/cs2';
 import { rollSkinFromCase } from '../data/cs2Database';
@@ -31,6 +30,8 @@ interface CaseRouletteModalProps {
   visible: boolean;
   caseItem: CaseContainer | null;
   openCount: number; // 1 to 5 simultaneous cases
+  fastSpin?: boolean;
+  onToggleFastSpin?: () => void;
   onClose: () => void;
   onCompleteDrops: (wonItems: InventoryItem[]) => void;
   onSellDrops: (wonItems: InventoryItem[]) => void;
@@ -41,6 +42,8 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
   visible,
   caseItem,
   openCount = 1,
+  fastSpin = false,
+  onToggleFastSpin,
   onClose,
   onCompleteDrops,
   onSellDrops,
@@ -50,6 +53,7 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
   const [wonSkins, setWonSkins] = useState<InventoryItem[]>([]);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showResult, setShowResult] = useState(false);
+  const [acceleratedThisSpin, setAcceleratedThisSpin] = useState(false);
 
   const scrollAnims = useRef<Animated.Value[]>([
     new Animated.Value(0),
@@ -59,6 +63,7 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     new Animated.Value(0),
   ]).current;
 
+  const targetTranslatesRef = useRef<number[]>([0, 0, 0, 0, 0]);
   const resultScale = useRef(new Animated.Value(0.6)).current;
   const goldPulse = useRef(new Animated.Value(0)).current;
   const lastTickIndex = useRef<number>(-1);
@@ -66,7 +71,7 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
 
   useEffect(() => {
     if (visible && caseItem) {
-      startMultiOpening(caseItem, Math.max(1, Math.min(5, openCount)));
+      startMultiOpening(caseItem, Math.max(1, Math.min(5, openCount)), fastSpin);
     }
   }, [visible, caseItem, openCount]);
 
@@ -106,9 +111,10 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     }
   };
 
-  const startMultiOpening = (container: CaseContainer, count: number) => {
+  const startMultiOpening = (container: CaseContainer, count: number, isFast: boolean) => {
     setShowResult(false);
     setIsSpinning(true);
+    setAcceleratedThisSpin(isFast);
     resultScale.setValue(0.6);
     goldPulse.setValue(0);
     lastTickIndex.current = -1;
@@ -118,6 +124,8 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     const animations: Animated.CompositeAnimation[] = [];
 
     const centerOffset = TRACK_WIDTH / 2 - ITEM_SPAN / 2;
+    const baseDuration = isFast ? 1850 : 4800;
+    const cascadeDelay = isFast ? 95 : 210;
 
     for (let s = 0; s < count; s++) {
       scrollAnims[s].setValue(0);
@@ -131,8 +139,8 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
 
       const jitter = (Math.random() - 0.5) * (CARD_WIDTH * 0.45);
       const targetTranslate = -(WINNING_INDEX * ITEM_SPAN - centerOffset + jitter);
+      targetTranslatesRef.current[s] = targetTranslate;
 
-      // Attach sound tick listener to first reel
       if (s === 0) {
         scrollAnims[0].addListener(({ value }) => {
           const currentIdx = Math.floor((Math.abs(value) + TRACK_WIDTH / 2) / ITEM_SPAN);
@@ -150,8 +158,8 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
       animations.push(
         Animated.timing(scrollAnims[s], {
           toValue: targetTranslate,
-          duration: 4900 + s * 220, // slight cascade delay per reel
-          easing: Easing.bezier(0.11, 0.86, 0.2, 1),
+          duration: baseDuration + s * cascadeDelay,
+          easing: Easing.bezier(0.12, 0.85, 0.22, 1),
           useNativeDriver: true,
         })
       );
@@ -169,17 +177,31 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     });
   };
 
-  const handleSkipAnimation = () => {
-    if (!isSpinning || wonSkins.length === 0) return;
+  // Accelerates the spin smoothly instead of instant-skipping!
+  const handleTriggerFastSpin = () => {
+    if (onToggleFastSpin) {
+      onToggleFastSpin();
+    }
+    if (!isSpinning || wonSkins.length === 0 || acceleratedThisSpin) return;
+    setAcceleratedThisSpin(true);
     if (animRef.current) {
       animRef.current.stop();
     }
-    const centerOffset = TRACK_WIDTH / 2 - ITEM_SPAN / 2;
-    const targetTranslate = -(WINNING_INDEX * ITEM_SPAN - centerOffset);
-    strips.forEach((_, s) => {
-      scrollAnims[s].setValue(targetTranslate);
+    const fastAnimations = strips.map((_, s) =>
+      Animated.timing(scrollAnims[s], {
+        toValue: targetTranslatesRef.current[s],
+        duration: 850 + s * 60,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      })
+    );
+    const parallelFast = Animated.parallel(fastAnimations);
+    animRef.current = parallelFast;
+    parallelFast.start(({ finished }) => {
+      if (finished) {
+        finishOpening(wonSkins);
+      }
     });
-    finishOpening(wonSkins);
   };
 
   if (!caseItem) return null;
@@ -193,7 +215,7 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <LinearGradient
-          colors={['rgba(4, 7, 15, 0.98)', 'rgba(11, 18, 35, 0.99)']}
+          colors={['rgba(8, 15, 32, 0.96)', 'rgba(15, 28, 55, 0.98)']}
           style={StyleSheet.absoluteFillObject}
         />
 
@@ -216,9 +238,14 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.multiBadge}>
-              <Ionicons name="flash" size={12} color="#38BDF8" />
+              <Ionicons
+                name={acceleratedThisSpin || fastSpin ? 'flash' : 'disc'}
+                size={13}
+                color={acceleratedThisSpin || fastSpin ? '#FACC15' : '#38BDF8'}
+              />
               <Text style={styles.openingLabel}>
-                ОТКРЫТИЕ x{strips.length} • {caseItem.name.toUpperCase()}
+                {acceleratedThisSpin || fastSpin ? '⚡ БЫСТРАЯ ПРОКРУТКА' : 'ОТКРЫТИЕ'} x{strips.length} •{' '}
+                {caseItem.name.toUpperCase()}
               </Text>
             </View>
           </View>
@@ -263,7 +290,7 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
                           ]}
                         >
                           <LinearGradient
-                            colors={['rgba(12, 18, 34, 0.96)', r.glow]}
+                            colors={['rgba(15, 24, 45, 0.96)', r.glow]}
                             style={StyleSheet.absoluteFillObject}
                           />
                           {isGoldMystery ? (
@@ -300,16 +327,19 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
             </ScrollView>
           )}
 
-          {/* Result Drop Showcase (Supports 1 to 5 Drops!) */}
+          {/* Result Drop Showcase */}
           {showResult && wonSkins.length > 0 ? (
             <Animated.View style={[styles.resultWrap, { transform: [{ scale: resultScale }] }]}>
-              <LiquidGlassCard glowColor={bestRarity.color} style={styles.resultCard}>
+              <LiquidGlassCard
+                glowColor={bestRarity.color}
+                themeMode="cyber_blue"
+                style={styles.resultCard}
+              >
                 <Text style={[styles.rarityBanner, { color: bestRarity.color }]}>
                   ★ ВЫПАЛО ПРЕДМЕТОВ: {wonSkins.length} НА СУММУ ${totalWonPrice.toFixed(2)} ★
                 </Text>
 
                 {wonSkins.length === 1 ? (
-                  /* Single Drop Hero View */
                   <View style={{ alignItems: 'center', width: '100%' }}>
                     <View style={styles.badgesWrap}>
                       {wonSkins[0].statTrak && (
@@ -347,7 +377,6 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
                     <Text style={styles.wonPrice}>${wonSkins[0].price.toFixed(2)}</Text>
                   </View>
                 ) : (
-                  /* Multi-Drop Grid View */
                   <ScrollView
                     style={{ maxHeight: 340, width: '100%', marginVertical: 12 }}
                     showsVerticalScrollIndicator={false}
@@ -428,9 +457,28 @@ export const CaseRouletteModal: React.FC<CaseRouletteModalProps> = ({
             </Animated.View>
           ) : (
             <View style={styles.spinningStatusWrap}>
-              <TouchableOpacity style={styles.skipBtn} onPress={handleSkipAnimation}>
-                <Ionicons name="play-skip-forward" size={14} color="#FFD700" />
-                <Text style={styles.skipBtnText}>МГНОВЕННОЕ ОТКРЫТИЕ (SKIP)</Text>
+              <TouchableOpacity
+                style={[
+                  styles.fastSpinBtn,
+                  (acceleratedThisSpin || fastSpin) && styles.fastSpinBtnActive,
+                ]}
+                onPress={handleTriggerFastSpin}
+              >
+                <Ionicons
+                  name="flash"
+                  size={15}
+                  color={acceleratedThisSpin || fastSpin ? '#0F172A' : '#FACC15'}
+                />
+                <Text
+                  style={[
+                    styles.fastSpinBtnText,
+                    (acceleratedThisSpin || fastSpin) && { color: '#0F172A' },
+                  ]}
+                >
+                  {acceleratedThisSpin || fastSpin
+                    ? '⚡ БЫСТРОЕ ОТКРЫТИЕ АКТИВНО (x2.5 СКОРОСТЬ)'
+                    : '⚡ ВКЛЮЧИТЬ БЫСТРОЕ ОТКРЫТИЕ (УСКОРИТЬ ПРОКРУТКУ)'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -460,9 +508,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+    backgroundColor: 'rgba(56, 189, 248, 0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    borderColor: 'rgba(56, 189, 248, 0.4)',
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 12,
@@ -471,15 +519,15 @@ const styles = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 1.1,
   },
   trackContainer: {
     width: TRACK_WIDTH,
     height: 170,
-    backgroundColor: 'rgba(6, 10, 22, 0.92)',
+    backgroundColor: 'rgba(10, 18, 36, 0.94)',
     borderTopWidth: 1.5,
     borderBottomWidth: 1.5,
-    borderColor: 'rgba(56, 189, 248, 0.25)',
+    borderColor: 'rgba(56, 189, 248, 0.35)',
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
@@ -657,7 +705,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   wonFloat: {
-    color: '#94A3B8',
+    color: '#CBD5E1',
     fontSize: 11,
     marginTop: 4,
   },
@@ -690,7 +738,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   wearMini: {
-    color: '#94A3B8',
+    color: '#CBD5E1',
     fontSize: 9,
     fontWeight: '800',
   },
@@ -714,7 +762,7 @@ const styles = StyleSheet.create({
   },
   keepBtn: {
     flex: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.18)',
+    backgroundColor: 'rgba(56, 189, 248, 0.22)',
     borderWidth: 1.2,
     borderColor: '#38BDF8',
     borderRadius: 12,
@@ -756,20 +804,24 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: 'center',
   },
-  skipBtn: {
+  fastSpinBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 215, 0, 0.16)',
-    borderWidth: 1,
-    borderColor: '#FFD700',
+    gap: 7,
+    backgroundColor: 'rgba(250, 204, 21, 0.16)',
+    borderWidth: 1.3,
+    borderColor: '#FACC15',
     paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
   },
-  skipBtnText: {
-    color: '#FFD700',
+  fastSpinBtnActive: {
+    backgroundColor: '#FACC15',
+    borderColor: '#FDE047',
+  },
+  fastSpinBtnText: {
+    color: '#FACC15',
     fontWeight: '900',
-    fontSize: 12,
+    fontSize: 11,
   },
 });

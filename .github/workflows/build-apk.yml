@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-android-apk:
-    name: Build CS2 Case Simulator APK
+    name: Build Signed CS2 Case Simulator APK
     runs-on: ubuntu-24.04
 
     steps:
@@ -39,8 +39,18 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
+      - name: Align and Sign APK with Android v1 + v2 + v3 Signatures
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          ZIPALIGN=$(find $ANDROID_HOME/build-tools -name zipalign | sort -V | tail -n 1)
+          keytool -genkeypair -v -storetype PKCS12 -keystore cs2-release.keystore -alias cs2-key -keyalg RSA -keysize 2048 -validity 10000 -storepass cs2simulator -keypass cs2simulator -dname "CN=CS2Drop, OU=Mobile, O=CS2Drop, L=Almaty, S=KZ, C=KZ"
+          RAW_APK=$(ls android/app/build/outputs/apk/release/*.apk | head -n 1)
+          $ZIPALIGN -v -p 4 "$RAW_APK" aligned.apk
+          $APKSIGNER sign --ks cs2-release.keystore --ks-pass pass:cs2simulator --key-pass pass:cs2simulator --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out CS2-Case-Simulator.apk aligned.apk
+          $APKSIGNER verify -v CS2-Case-Simulator.apk
+
       - name: Upload Ready APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CS2-Case-Simulator-APK
-          path: android/app/build/outputs/apk/release/*.apk
+          path: ./CS2-Case-Simulator.apk

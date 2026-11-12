@@ -96,7 +96,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<BottomNavTab>('cases');
   const [requestedMiniGame, setRequestedMiniGame] = useState<MiniGameTab>('lobby');
   const [catalogCategory, setCatalogCategory] = useState<CatalogCategory | 'all'>('all');
-  const [selectedAvatarId, setSelectedAvatarId] = useState<string>('s1mple');
+  const [selectedAvatarId, setSelectedAvatarId] = useState<string>('agent-4726');
   const [caseSearchQuery, setCaseSearchQuery] = useState<string>('');
   const [casePriceSort, setCasePriceSort] = useState<'default' | 'asc' | 'desc'>('default');
 
@@ -570,55 +570,75 @@ export default function App() {
                   setActiveTab('profile');
                 }}
               >
-                <View style={[styles.avatarBox, { backgroundColor: currentAvatar.color }]}>
-                  <Ionicons name={currentAvatar.icon as any} size={15} color="#FFFFFF" />
+                <View style={[styles.avatarBox, { borderColor: currentAvatar.color, borderWidth: 1.5 }]}>
+                  {currentAvatar.image ? (
+                    <Image
+                      source={{ uri: currentAvatar.image }}
+                      style={styles.avatarImgSmall}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Ionicons name="person" size={16} color="#FFFFFF" />
+                  )}
                 </View>
                 <View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={[styles.brandName, { color: theme.textPrimary }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Text
+                      allowFontScaling={false}
+                      numberOfLines={1}
+                      style={[styles.brandName, { color: theme.textPrimary, maxWidth: 95 }]}
+                    >
                       {user.nickname}
                     </Text>
                     <View style={[styles.premierHeaderBadge, { backgroundColor: premierRating.color }]}>
-                      <Text style={styles.premierHeaderBadgeText}>
+                      <Text allowFontScaling={false} style={styles.premierHeaderBadgeText}>
                         {premierRating.rating.toLocaleString()}
                       </Text>
                     </View>
                   </View>
-                  <Text style={[styles.rankTextMini, { color: theme.textSecondary }]}>
-                    {cs2Rank.nameRu} ({cs2Rank.name})
+                  <Text
+                    allowFontScaling={false}
+                    numberOfLines={1}
+                    style={[styles.rankTextMini, { color: theme.textSecondary, maxWidth: 120 }]}
+                  >
+                    {cs2Rank.nameRu}
                   </Text>
                 </View>
               </TouchableOpacity>
 
               <View style={styles.balanceGroup}>
-                {/* Quick Theme Switcher Button */}
-                <TouchableOpacity
-                  style={[styles.iconHeaderBtn, { backgroundColor: theme.surfaceBg }]}
-                  onPress={() => {
-                    playClickSound();
-                    setThemeMode((prev) => (prev === 'obsidian' ? 'bright' : 'obsidian'));
-                  }}
-                >
-                  <Ionicons
-                    name={theme.isLight ? 'moon-outline' : 'sunny-outline'}
-                    size={16}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.iconHeaderBtn, { backgroundColor: theme.surfaceBg }]}
                   onPress={() => setDailyModalOpen(true)}
                 >
                   <Ionicons
                     name="gift-outline"
-                    size={16}
+                    size={17}
                     color={canClaimDaily ? '#EAB308' : theme.textSecondary}
                   />
                 </TouchableOpacity>
 
+                <TouchableOpacity
+                  style={[
+                    styles.iconHeaderBtn,
+                    { backgroundColor: theme.surfaceBg },
+                    activeTab === 'settings' && { borderColor: '#16A34A', borderWidth: 1.5 },
+                  ]}
+                  onPress={() => {
+                    playClickSound();
+                    setOpenedCaseScreen(null);
+                    setActiveTab('settings');
+                  }}
+                >
+                  <Ionicons
+                    name="settings-outline"
+                    size={17}
+                    color={activeTab === 'settings' ? '#16A34A' : theme.textSecondary}
+                  />
+                </TouchableOpacity>
+
                 <View style={[styles.walletPill, { backgroundColor: theme.surfaceBg }]}>
-                  <Text style={styles.walletAmount}>${balance.toFixed(2)}</Text>
+                  <Text allowFontScaling={false} style={styles.walletAmount}>${balance.toFixed(2)}</Text>
                 </View>
               </View>
             </View>
@@ -656,6 +676,7 @@ export default function App() {
                   onTrySpendBalance={handleTrySpendForCase}
                   onCompleteDrops={handleCompleteDrops}
                   onSellDrops={handleSellDrops}
+                  onAutoSellDrops={handleSellDrops}
                   onInspectDrop={(won) => setInspectedSkin(won)}
                   onPreviewTemplate={handlePreviewTemplate}
                 />
@@ -1082,22 +1103,45 @@ export default function App() {
                       {/* CS2 Rank & Premier Rating Card */}
                       <LiquidGlassCard themeMode={themeMode} style={styles.profileCard}>
                         <View style={styles.profileTopRow}>
-                          <View style={[styles.avatarBoxLarge, { backgroundColor: currentAvatar.color }]}>
-                            <Ionicons name={currentAvatar.icon as any} size={28} color="#FFFFFF" />
+                          <View style={[styles.avatarBoxLarge, { borderColor: currentAvatar.color, borderWidth: 2 }]}>
+                            {currentAvatar.image ? (
+                              <Image
+                                source={{ uri: currentAvatar.image }}
+                                style={styles.avatarImgLarge}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <Ionicons name="person" size={28} color="#FFFFFF" />
+                            )}
                           </View>
                           <View style={{ flex: 1 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={[styles.profileNick, { color: theme.textPrimary }]}>
+                              <Text
+                                allowFontScaling={false}
+                                numberOfLines={1}
+                                style={[styles.profileNick, { color: theme.textPrimary }]}
+                              >
                                 {user.nickname}
                               </Text>
                               <View style={[styles.premierHeaderBadge, { backgroundColor: premierRating.color }]}>
-                                <Text style={styles.premierHeaderBadgeText}>
+                                <Text allowFontScaling={false} style={styles.premierHeaderBadgeText}>
                                   {premierRating.rating.toLocaleString()}
                                 </Text>
                               </View>
                             </View>
-                            <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>
-                              {user.email}
+                            <Text
+                              allowFontScaling={false}
+                              numberOfLines={1}
+                              style={[styles.profileAgentName, { color: currentAvatar.color }]}
+                            >
+                              {currentAvatar.fullName}
+                            </Text>
+                            <Text
+                              allowFontScaling={false}
+                              numberOfLines={1}
+                              style={[styles.profileEmail, { color: theme.textSecondary }]}
+                            >
+                              {currentAvatar.fraction} • {currentAvatar.teamName}
                             </Text>
                           </View>
                         </View>
@@ -1106,7 +1150,10 @@ export default function App() {
                         <View style={[styles.cs2RankShowcase, { backgroundColor: theme.surfaceBg }]}>
                           <View style={styles.cs2RankTitleRow}>
                             <Ionicons name={cs2Rank.icon as any} size={20} color={premierRating.color} />
-                            <Text style={[styles.cs2RankTitleText, { color: theme.textPrimary }]}>
+                            <Text
+                              allowFontScaling={false}
+                              style={[styles.cs2RankTitleText, { color: theme.textPrimary }]}
+                            >
                               {cs2Rank.nameRu} ({cs2Rank.name})
                             </Text>
                           </View>
@@ -1122,17 +1169,23 @@ export default function App() {
                               ]}
                             />
                           </View>
-                          <Text style={[styles.rankProgressHint, { color: theme.textMuted }]}>
+                          <Text
+                            allowFontScaling={false}
+                            style={[styles.rankProgressHint, { color: theme.textMuted }]}
+                          >
                             {nextRankData.nextRank
                               ? `Прогресс ${Math.round(nextRankData.progress * 100)}% • До ${nextRankData.nextRank.nameRu}: ${nextRankData.needed} ELO`
                               : 'Максимальное звание CS2 достигнуто!'}
                           </Text>
                         </View>
 
-                        {/* Avatar Picker */}
+                        {/* Avatar Picker (Original CS2 Agents) */}
                         <View style={styles.avatarPickerSection}>
-                          <Text style={[styles.avatarPickerTitle, { color: theme.textSecondary }]}>
-                            Выберите аватар CS2:
+                          <Text
+                            allowFontScaling={false}
+                            style={[styles.avatarPickerTitle, { color: theme.textSecondary }]}
+                          >
+                            Выберите агента CS2 (Оригинальные модели):
                           </Text>
                           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.avatarScroll}>
                             {CS2_AVATARS.map((av) => {
@@ -1150,12 +1203,27 @@ export default function App() {
                                     active && { borderColor: av.color, borderWidth: 2 },
                                   ]}
                                 >
-                                  <View style={[styles.avatarPickerIcon, { backgroundColor: av.color }]}>
-                                    <Ionicons name={av.icon as any} size={15} color="#FFFFFF" />
+                                  <Image
+                                    source={{ uri: av.image }}
+                                    style={styles.avatarPickerImg}
+                                    resizeMode="cover"
+                                  />
+                                  <View style={{ flex: 1 }}>
+                                    <Text
+                                      allowFontScaling={false}
+                                      numberOfLines={1}
+                                      style={[styles.avatarPickerName, { color: theme.textPrimary }]}
+                                    >
+                                      {av.name}
+                                    </Text>
+                                    <Text
+                                      allowFontScaling={false}
+                                      numberOfLines={1}
+                                      style={[styles.avatarPickerTeam, { color: av.color }]}
+                                    >
+                                      {av.teamName}
+                                    </Text>
                                   </View>
-                                  <Text style={[styles.avatarPickerName, { color: theme.textPrimary }]}>
-                                    {av.name}
-                                  </Text>
                                 </TouchableOpacity>
                               );
                             })}
@@ -1408,13 +1476,17 @@ export default function App() {
               )}
             </View>
 
-            {/* MINIMALIST BOTTOM NAVIGATION BAR */}
+            {/* FLOATING LIQUID GLASS BOTTOM NAVIGATION BAR */}
             <View
               style={[
                 styles.bottomBar,
                 {
-                  backgroundColor: theme.tabBarBg,
-                  borderColor: theme.cardBorder,
+                  backgroundColor: theme.isLight
+                    ? 'rgba(255, 255, 255, 0.88)'
+                    : 'rgba(16, 20, 30, 0.84)',
+                  borderColor: theme.isLight
+                    ? 'rgba(0, 0, 0, 0.08)'
+                    : 'rgba(255, 255, 255, 0.14)',
                 },
               ]}
             >
@@ -1423,8 +1495,6 @@ export default function App() {
                 { key: 'inventory', icon: 'briefcase-outline' as const, label: 'Склад' },
                 { key: 'minigames', icon: 'game-controller-outline' as const, label: 'Игры' },
                 { key: 'quests', icon: 'checkbox-outline' as const, label: 'Миссии' },
-                { key: 'profile', icon: 'person-outline' as const, label: 'Профиль' },
-                { key: 'settings', icon: 'settings-outline' as const, label: 'Настройки' },
               ].map((item) => {
                 const active = activeTab === item.key;
                 return (
@@ -1446,6 +1516,8 @@ export default function App() {
                       color={active ? '#16A34A' : theme.textMuted}
                     />
                     <Text
+                      allowFontScaling={false}
+                      numberOfLines={1}
                       style={[
                         styles.navLabel,
                         { color: active ? '#16A34A' : theme.textMuted },
@@ -1880,19 +1952,27 @@ const styles = StyleSheet.create({
   },
   bottomBar: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    borderTopWidth: 1,
+    bottom: 14,
+    left: 14,
+    right: 14,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1.2,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
+    paddingHorizontal: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
   },
   navItem: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
   },
   navLabel: {
     fontSize: 10,
@@ -1900,20 +1980,36 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   avatarBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  avatarImgSmall: {
+    width: 36,
+    height: 36,
   },
   avatarBoxLarge: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     marginRight: 12,
+  },
+  avatarImgLarge: {
+    width: 64,
+    height: 64,
+  },
+  profileAgentName: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   premierHeaderBadge: {
     paddingHorizontal: 6,
@@ -1998,24 +2094,29 @@ const styles = StyleSheet.create({
   avatarPickerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginRight: 8,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginRight: 10,
     borderWidth: 1,
     borderColor: 'transparent',
+    minWidth: 165,
   },
-  avatarPickerIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
+  avatarPickerImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   avatarPickerName: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  avatarPickerTeam: {
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 1,
   },
   dailyCareBtn: {
     flexDirection: 'row',

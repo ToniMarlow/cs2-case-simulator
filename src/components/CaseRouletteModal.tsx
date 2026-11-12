@@ -4,6 +4,7 @@ import {
   Dimensions,
   Easing,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
+  AutoSellThreshold,
   CaseContainer,
   CatalogCategory,
   InventoryItem,
@@ -21,13 +23,19 @@ import {
   ThemeMode,
 } from '../types/cs2';
 import { rollSkinFromCase } from '../data/cs2Database';
-import { playClickSound, playDropSound, playTickSound } from '../utils/soundManager';
+import {
+  playCS2GoldFanfare,
+  playCS2ItemLock,
+  playClickSound,
+  playDropSound,
+  playTickSound,
+} from '../utils/soundManager';
 import { SkinCard, THEMES } from './LiquidGlassUI';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const TRACK_WIDTH = Math.min(SCREEN_WIDTH - 28, 412);
-const CARD_WIDTH = 124;
-const CARD_MARGIN = 5;
+const TRACK_WIDTH = Math.min(SCREEN_WIDTH - 20, 420);
+const CARD_WIDTH = 154;
+const CARD_MARGIN = 6;
 const ITEM_SPAN = CARD_WIDTH + CARD_MARGIN * 2;
 const WINNING_INDEX = 24;
 const TOTAL_ITEMS = 29;
@@ -40,6 +48,14 @@ const RARITY_SORT_ORDER: Record<RarityKey, number> = {
   gold: 5,
 };
 
+const AUTO_SELL_OPTIONS: { key: AutoSellThreshold; label: string; desc: string; color: string }[] = [
+  { key: 'milspec', label: 'Армейское и ниже', desc: 'Авто-продажа синих скинов', color: '#4B69FF' },
+  { key: 'restricted', label: 'Запрещённое и ниже', desc: 'Армейское + Запрещённое (синее и фиолетовое)', color: '#8847FF' },
+  { key: 'classified', label: 'Засекреченное и ниже', desc: 'Все скины вплоть до розовых', color: '#D32CE6' },
+  { key: 'all_except_gold', label: 'Всё кроме Ножей (★ Gold)', desc: 'Продавать абсолютно всё, кроме ★ Ножей/Перчаток', color: '#FFD700' },
+  { key: 'none', label: 'Не продавать', desc: 'Все выбитые скины сохранять в инвентарь', color: '#9CA3AF' },
+];
+
 interface CS2CaseScreenProps {
   caseItem: CaseContainer;
   balance: number;
@@ -50,6 +66,7 @@ interface CS2CaseScreenProps {
   onTrySpendBalance: (cost: number, count: number) => boolean;
   onCompleteDrops: (wonItems: InventoryItem[]) => void;
   onSellDrops: (wonItems: InventoryItem[]) => void;
+  onAutoSellDrops?: (wonItems: InventoryItem[]) => void;
   onInspectDrop: (item: InventoryItem) => void;
   onPreviewTemplate: (skin: SkinTemplate, category: CatalogCategory) => void;
 }
@@ -64,6 +81,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   onTrySpendBalance,
   onCompleteDrops,
   onSellDrops,
+  onAutoSellDrops,
   onInspectDrop,
   onPreviewTemplate,
 }) => {
@@ -75,6 +93,29 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   const [wonSkins, setWonSkins] = useState<InventoryItem[]>([]);
   const [acceleratedThisSpin, setAcceleratedThisSpin] = useState<boolean>(false);
   const [showGoldList, setShowGoldList] = useState<boolean>(false);
+
+  // New Toggles
+  const [autoOpen, setAutoOpen] = useState<boolean>(false);
+  const [autoSell, setAutoSell] = useState<boolean>(false);
+  const [autoSellThreshold, setAutoSellThreshold] = useState<AutoSellThreshold>('milspec');
+  const [autoSellModalOpen, setAutoSellModalOpen] = useState<boolean>(false);
+  const [autoSoldItems, setAutoSoldItems] = useState<InventoryItem[]>([]);
+
+  const autoOpenRef = useRef(false);
+  const autoOpenTimerRef = useRef<any>(null);
+  const balanceRef = useRef(balance);
+
+  useEffect(() => {
+    balanceRef.current = balance;
+  }, [balance]);
+
+  useEffect(() => {
+    autoOpenRef.current = autoOpen;
+    if (!autoOpen && autoOpenTimerRef.current) {
+      clearTimeout(autoOpenTimerRef.current);
+      autoOpenTimerRef.current = null;
+    }
+  }, [autoOpen]);
 
   const scrollAnims = useRef<Animated.Value[]>([
     new Animated.Value(0),
@@ -91,29 +132,79 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   useEffect(() => {
     return () => {
       if (animRef.current) animRef.current.stop();
+      if (autoOpenTimerRef.current) clearTimeout(autoOpenTimerRef.current);
       scrollAnims.forEach((a) => a.removeAllListeners());
     };
   }, []);
+
+  const shouldAutoSell = (item: InventoryItem) => {
+    if (!autoSell) return false;
+    if (autoSellThreshold === 'none') return false;
+    if (autoSellThreshold === 'milspec') return item.rarity === 'milspec';
+    if (autoSellThreshold === 'restricted') return item.rarity === 'milspec' || item.rarity === 'restricted';
+    if (autoSellThreshold === 'classified') return item.rarity === 'milspec' || item.rarity === 'restricted' || item.rarity === 'classified';
+    if (autoSellThreshold === 'all_except_gold') return item.rarity !== 'gold';
+    return false;
+  };
 
   const finishOpening = (winners: InventoryItem[]) => {
     scrollAnims.forEach((a) => a.removeAllListeners());
     setStageState('result');
 
-    const hasUltraRare = winners.some(
-      (w) => w.rarity === 'gold' || w.rarity === 'covert' || w.rarity === 'classified'
-    );
-    playDropSound(hasUltraRare);
-    onCompleteDrops(winners);
+    const hasGold = winners.some((w) => w.rarity === 'gold');
+    const hasUltraRare = winners.some((w) => w.rarity === 'gold' || w.rarity === 'covert');
+
+    if (hasGold) {
+      playCS2GoldFanfare();
+    } else {
+      playCS2ItemLock();
+      playDropSound(hasUltraRare);
+    }
+
+    const toSell = winners.filter(shouldAutoSell);
+    const toKeep = winners.filter((w) => !shouldAutoSell(w));
+
+    setAutoSoldItems(toSell);
+
+    if (toSell.length > 0) {
+      if (onAutoSellDrops) {
+        onAutoSellDrops(toSell);
+      } else {
+        onSellDrops(toSell);
+      }
+    }
+    if (toKeep.length > 0) {
+      onCompleteDrops(toKeep);
+    }
+
+    // Auto-Open Next Case Trigger
+    if (autoOpenRef.current) {
+      const nextDelay = fastSpin ? 550 : 1600;
+      autoOpenTimerRef.current = setTimeout(() => {
+        if (autoOpenRef.current) {
+          const totalCost = Number((caseItem.price * openCount).toFixed(2));
+          if (balanceRef.current >= totalCost) {
+            handleUnlockContainer();
+          } else {
+            setAutoOpen(false);
+          }
+        }
+      }, nextDelay);
+    }
   };
 
   const handleUnlockContainer = () => {
     if (stageState === 'spinning') return;
     const totalCost = Number((caseItem.price * openCount).toFixed(2));
     const ok = onTrySpendBalance(totalCost, openCount);
-    if (!ok) return;
+    if (!ok) {
+      setAutoOpen(false);
+      return;
+    }
 
     setStageState('spinning');
     setAcceleratedThisSpin(fastSpin);
+    setAutoSoldItems([]);
     lastTickIndex.current = -1;
 
     const allStrips: InventoryItem[][] = [];
@@ -121,8 +212,8 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
     const animations: Animated.CompositeAnimation[] = [];
 
     const centerOffset = TRACK_WIDTH / 2 - ITEM_SPAN / 2;
-    const baseDuration = fastSpin ? 1750 : 4600;
-    const cascadeDelay = fastSpin ? 80 : 180;
+    const baseDuration = fastSpin ? 1650 : 4400;
+    const cascadeDelay = fastSpin ? 70 : 160;
 
     for (let s = 0; s < openCount; s++) {
       scrollAnims[s].setValue(0);
@@ -183,7 +274,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
     const fastAnimations = strips.map((_, s) =>
       Animated.timing(scrollAnims[s], {
         toValue: targetTranslatesRef.current[s],
-        duration: 750 + s * 50,
+        duration: 650 + s * 40,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       })
@@ -197,56 +288,76 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
     });
   };
 
-  const regularSkins = [...caseItem.items]
-    .filter((i) => i.rarity !== 'gold')
-    .sort((a, b) => RARITY_SORT_ORDER[a.rarity] - RARITY_SORT_ORDER[b.rarity]);
-  const goldSkins = caseItem.items.filter((i) => i.rarity === 'gold');
+  const handleStopAutoOpen = () => {
+    playClickSound();
+    setAutoOpen(false);
+    if (autoOpenTimerRef.current) {
+      clearTimeout(autoOpenTimerRef.current);
+      autoOpenTimerRef.current = null;
+    }
+  };
 
-  const totalWonPrice = wonSkins.reduce((acc, item) => acc + item.price, 0);
+  const regularSkins = [...caseItem.items]
+    .filter((s) => s.rarity !== 'gold')
+    .sort((a, b) => RARITY_SORT_ORDER[a.rarity] - RARITY_SORT_ORDER[b.rarity]);
+
+  const goldSkins = [...caseItem.items].filter((s) => s.rarity === 'gold');
+
+  const totalWonPrice = wonSkins.reduce((acc, s) => acc + s.price, 0);
   const totalOpenCost = Number((caseItem.price * openCount).toFixed(2));
-  const isCompactMulti = strips.length > 1;
+  const isCompactMulti = openCount >= 3;
+
+  const currentThresholdObj = AUTO_SELL_OPTIONS.find((o) => o.key === autoSellThreshold) || AUTO_SELL_OPTIONS[0];
 
   return (
-    <View style={styles.screenContainer}>
-      {/* Top CS2 Navigation Header */}
+    <View style={[styles.rootContainer, { backgroundColor: theme.bgGradient[0] }]}>
+      {/* ==================== CS2 CASE HEADER ==================== */}
       <View
         style={[
-          styles.topBar,
+          styles.caseHeader,
           {
-            backgroundColor: theme.cardBg,
+            backgroundColor: theme.headerBg,
             borderColor: theme.cardBorder,
           },
         ]}
       >
         <TouchableOpacity
-          style={[styles.backBtn, { backgroundColor: theme.surfaceBg }]}
-          disabled={stageState === 'spinning'}
           onPress={() => {
-            playClickSound();
+            handleStopAutoOpen();
             onBack();
           }}
+          style={styles.backBtn}
         >
-          <Ionicons name="arrow-back" size={18} color={theme.textPrimary} />
-          <Text style={[styles.backBtnText, { color: theme.textPrimary }]}>Кейсы</Text>
+          <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
 
-        <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
-          <Text numberOfLines={1} style={[styles.caseHeaderTitle, { color: theme.textPrimary }]}>
+        <View style={{ flex: 1, marginHorizontal: 8 }}>
+          <Text
+            allowFontScaling={false}
+            numberOfLines={1}
+            style={[styles.caseHeaderTitle, { color: theme.textPrimary }]}
+          >
             {caseItem.name}
           </Text>
-          <Text numberOfLines={1} style={[styles.caseHeaderSub, { color: theme.textSecondary }]}>
-            {caseItem.subtitle}
+          <Text
+            allowFontScaling={false}
+            numberOfLines={1}
+            style={[styles.caseHeaderSub, { color: theme.textSecondary }]}
+          >
+            {caseItem.subtitle || 'Контейнер со скинами CS2'}
           </Text>
         </View>
 
         <View style={[styles.pricePill, { backgroundColor: theme.surfaceBg }]}>
-          <Text style={styles.pricePillText}>${caseItem.price.toFixed(2)}</Text>
+          <Text allowFontScaling={false} style={styles.pricePillText}>
+            ${caseItem.price.toFixed(2)}
+          </Text>
         </View>
       </View>
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 150 }}
+        contentContainerStyle={{ padding: 12, paddingBottom: 175 }}
         showsVerticalScrollIndicator={false}
       >
         {/* ==================== UPPER CS2 STAGE (CASE / ROULETTE / RESULT) ==================== */}
@@ -266,8 +377,11 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                 style={styles.heroCaseImage}
                 resizeMode="contain"
               />
-              <Text style={[styles.idleHintText, { color: theme.textSecondary }]}>
-                Нажмите «Разблокировать контейнер» снизу, чтобы открыть кейс
+              <Text
+                allowFontScaling={false}
+                style={[styles.idleHintText, { color: theme.textSecondary }]}
+              >
+                Нажмите «Разблокировать контейнер» снизу для открытия
               </Text>
             </View>
           )}
@@ -281,13 +395,15 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                     styles.trackContainer,
                     isCompactMulti && styles.trackContainerCompact,
                     {
-                      backgroundColor: theme.isLight ? '#F3F4F6' : '#14161B',
+                      backgroundColor: theme.isLight ? '#F3F4F6' : '#11141C',
                       borderColor: theme.cardBorder,
                     },
                   ]}
                 >
-                  {/* Center CS2 Vertical Marker Line */}
+                  {/* Center CS2 Vertical Marker & Golden Pointers */}
                   <View style={styles.centerMarkerLine} />
+                  <View style={styles.topPointer} />
+                  <View style={styles.bottomPointer} />
 
                   <Animated.View
                     style={[
@@ -330,12 +446,14 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                           )}
                           <View>
                             <Text
+                              allowFontScaling={false}
                               numberOfLines={1}
                               style={[styles.rWeapon, { color: theme.textSecondary }]}
                             >
                               {isGoldMystery ? '★ Особый предмет' : item.weapon}
                             </Text>
                             <Text
+                              allowFontScaling={false}
                               numberOfLines={1}
                               style={[styles.rName, { color: theme.textPrimary }]}
                             >
@@ -354,9 +472,22 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
 
           {stageState === 'result' && wonSkins.length > 0 && (
             <View style={styles.resultStageBox}>
-              <Text style={[styles.resultHeaderLabel, { color: theme.textSecondary }]}>
-                ПОЛУЧЕНО ПРЕДМЕТОВ: {wonSkins.length} • НА СУММУ ${totalWonPrice.toFixed(2)}
+              <Text
+                allowFontScaling={false}
+                style={[styles.resultHeaderLabel, { color: theme.textSecondary }]}
+              >
+                ВЫПАЛО: {wonSkins.length} ПРЕДМ. • СУММА ${totalWonPrice.toFixed(2)}
               </Text>
+
+              {/* Auto-Sold Notification Banner */}
+              {autoSoldItems.length > 0 && (
+                <View style={styles.autoSoldAlertBanner}>
+                  <Ionicons name="flash" size={14} color="#16A34A" />
+                  <Text allowFontScaling={false} style={styles.autoSoldAlertText}>
+                    Авто-продано в баланс: {autoSoldItems.length} шт. (+${autoSoldItems.reduce((acc, i) => acc + i.price, 0).toFixed(2)})
+                  </Text>
+                </View>
+              )}
 
               {wonSkins.length === 1 ? (
                 <View style={styles.singleDropShowcase}>
@@ -367,17 +498,20 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                         { backgroundColor: RARITIES[wonSkins[0].rarity].color },
                       ]}
                     >
-                      <Text style={styles.rarityTagPillText}>
+                      <Text allowFontScaling={false} style={styles.rarityTagPillText}>
                         {RARITIES[wonSkins[0].rarity].name}
                       </Text>
                     </View>
                     {wonSkins[0].statTrak && (
                       <View style={styles.stTagPill}>
-                        <Text style={styles.stTagPillText}>StatTrak™</Text>
+                        <Text allowFontScaling={false} style={styles.stTagPillText}>StatTrak™</Text>
                       </View>
                     )}
                     <View style={[styles.wearTagPill, { backgroundColor: theme.surfaceBg }]}>
-                      <Text style={[styles.wearTagPillText, { color: theme.textSecondary }]}>
+                      <Text
+                        allowFontScaling={false}
+                        style={[styles.wearTagPillText, { color: theme.textSecondary }]}
+                      >
                         {wonSkins[0].wearName}
                       </Text>
                     </View>
@@ -389,15 +523,22 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                     resizeMode="contain"
                   />
 
-                  <Text style={[styles.singleDropTitle, { color: theme.textPrimary }]}>
+                  <Text
+                    allowFontScaling={false}
+                    numberOfLines={1}
+                    style={[styles.singleDropTitle, { color: theme.textPrimary }]}
+                  >
                     {wonSkins[0].weapon} | {wonSkins[0].name}
                   </Text>
                   {!wonSkins[0].isSticker && (
-                    <Text style={[styles.singleDropFloat, { color: theme.textMuted }]}>
+                    <Text
+                      allowFontScaling={false}
+                      style={[styles.singleDropFloat, { color: theme.textMuted }]}
+                    >
                       Float: {wonSkins[0].floatValue.toFixed(6)}
                     </Text>
                   )}
-                  <Text style={styles.singleDropPrice}>
+                  <Text allowFontScaling={false} style={styles.singleDropPrice}>
                     ${wonSkins[0].price.toFixed(2)}
                   </Text>
                 </View>
@@ -405,6 +546,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                 <View style={{ width: '100%', marginVertical: 8 }}>
                   {wonSkins.map((skin) => {
                     const r = RARITIES[skin.rarity];
+                    const wasSold = autoSoldItems.some((s) => s.instanceId === skin.instanceId);
                     return (
                       <TouchableOpacity
                         key={skin.instanceId}
@@ -424,17 +566,28 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                         />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text
+                            allowFontScaling={false}
                             numberOfLines={1}
                             style={[styles.multiDropName, { color: theme.textPrimary }]}
                           >
                             {skin.statTrak ? 'StatTrak™ ' : ''}
                             {skin.weapon} | {skin.name}
                           </Text>
-                          <Text style={{ color: theme.textSecondary, fontSize: 10 }}>
+                          <Text
+                            allowFontScaling={false}
+                            style={{ color: theme.textSecondary, fontSize: 10 }}
+                          >
                             {r.name} • {skin.wear}
                           </Text>
                         </View>
-                        <Text style={styles.multiDropPrice}>${skin.price.toFixed(2)}</Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text allowFontScaling={false} style={styles.multiDropPrice}>
+                            ${skin.price.toFixed(2)}
+                          </Text>
+                          {wasSold && (
+                            <Text style={styles.soldBadgeSmall}>[ПРОДАНО]</Text>
+                          )}
+                        </View>
                       </TouchableOpacity>
                     );
                   })}
@@ -445,10 +598,16 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
               <View style={styles.resultActionsRow}>
                 <TouchableOpacity
                   style={[styles.resultSecondaryBtn, { backgroundColor: theme.surfaceBg }]}
-                  onPress={() => setStageState('idle')}
+                  onPress={() => {
+                    handleStopAutoOpen();
+                    setStageState('idle');
+                  }}
                 >
-                  <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>
-                    В СКЛАД (ГОТОВО)
+                  <Text
+                    allowFontScaling={false}
+                    style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}
+                  >
+                    В СКЛАД
                   </Text>
                 </TouchableOpacity>
 
@@ -457,7 +616,10 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                     style={[styles.resultSecondaryBtn, { backgroundColor: theme.surfaceBg }]}
                     onPress={() => onInspectDrop(wonSkins[0])}
                   >
-                    <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>
+                    <Text
+                      allowFontScaling={false}
+                      style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}
+                    >
                       3D ОСМОТР
                     </Text>
                   </TouchableOpacity>
@@ -466,11 +628,12 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                 <TouchableOpacity
                   style={styles.resultSellBtn}
                   onPress={() => {
+                    handleStopAutoOpen();
                     onSellDrops(wonSkins);
                     setStageState('idle');
                   }}
                 >
-                  <Text style={styles.resultSellBtnText}>
+                  <Text allowFontScaling={false} style={styles.resultSellBtnText}>
                     ПРОДАТЬ (${totalWonPrice.toFixed(2)})
                   </Text>
                 </TouchableOpacity>
@@ -481,18 +644,21 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
 
         {/* ==================== CASE CONTENTS GRID (КАК В CS2) ==================== */}
         <View style={styles.contentsHeaderRow}>
-          <Text style={[styles.contentsTitle, { color: theme.textPrimary }]}>
-            СОДЕРЖИМОЕ КОНТЕЙНЕРА ({caseItem.items.length})
+          <Text
+            allowFontScaling={false}
+            style={[styles.contentsTitle, { color: theme.textPrimary }]}
+          >
+            СОДЕРЖИМОЕ ({caseItem.items.length})
           </Text>
           {goldSkins.length > 0 && (
             <TouchableOpacity
               onPress={() => setShowGoldList((v) => !v)}
               style={styles.goldFilterPill}
             >
-              <Text style={styles.goldFilterPillText}>
+              <Text allowFontScaling={false} style={styles.goldFilterPillText}>
                 {showGoldList
-                  ? 'Показать обычные скины'
-                  : `★ Особые предметы (${goldSkins.length})`}
+                  ? 'Обычные скины'
+                  : `★ Ножи / Перчатки (${goldSkins.length})`}
               </Text>
             </TouchableOpacity>
           )}
@@ -510,7 +676,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                 />
               ))}
 
-              {/* Special Gold Mystery Tile (just like in CS2!) */}
+              {/* Special Gold Mystery Tile */}
               {goldSkins.length > 0 && (
                 <TouchableOpacity
                   activeOpacity={0.85}
@@ -526,14 +692,20 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                   <View style={styles.goldCircleIcon}>
                     <MaterialCommunityIcons
                       name="knife-military"
-                      size={28}
+                      size={32}
                       color="#EAB308"
                     />
                   </View>
-                  <Text style={[styles.goldSpecialTitle, { color: theme.textPrimary }]}>
+                  <Text
+                    allowFontScaling={false}
+                    style={[styles.goldSpecialTitle, { color: theme.textPrimary }]}
+                  >
                     ★ Редкий особый предмет
                   </Text>
-                  <Text style={[styles.goldSpecialSub, { color: theme.textSecondary }]}>
+                  <Text
+                    allowFontScaling={false}
+                    style={[styles.goldSpecialSub, { color: theme.textSecondary }]}
+                  >
                     Ножи / Перчатки ({goldSkins.length} шт.)
                   </Text>
                   <View style={[styles.rBottomBar, { backgroundColor: '#EAB308', width: '100%' }]} />
@@ -563,6 +735,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
           },
         ]}
       >
+        {/* ROW 1: MULTI OPEN PILLS + FAST SPIN */}
         <View style={styles.controlsTopRow}>
           <View style={styles.multiPillsRow}>
             {[1, 2, 3, 4, 5].map((cnt) => {
@@ -570,7 +743,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
               return (
                 <TouchableOpacity
                   key={cnt}
-                  disabled={stageState === 'spinning'}
+                  disabled={stageState === 'spinning' || autoOpen}
                   onPress={() => {
                     playClickSound();
                     setOpenCount(cnt);
@@ -583,6 +756,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                   ]}
                 >
                   <Text
+                    allowFontScaling={false}
                     style={[
                       styles.countPillText,
                       { color: active ? '#FFFFFF' : theme.textSecondary },
@@ -610,6 +784,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
               color={fastSpin ? '#111827' : theme.textSecondary}
             />
             <Text
+              allowFontScaling={false}
               style={[
                 styles.fastPillText,
                 { color: fastSpin ? '#111827' : theme.textSecondary },
@@ -620,53 +795,236 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          disabled={stageState === 'spinning'}
-          onPress={handleUnlockContainer}
-          style={[
-            styles.cs2GreenUnlockBtn,
-            stageState === 'spinning' && { opacity: 0.6 },
-          ]}
-        >
-          <Text style={styles.cs2GreenUnlockText}>
-            {stageState === 'spinning'
-              ? 'ОТКРЫВАЕМ КОНТЕЙНЕР...'
-              : `РАЗБЛОКИРОВАТЬ КОНТЕЙНЕР (x${openCount}) • $${totalOpenCost.toFixed(2)}`}
-          </Text>
-        </TouchableOpacity>
+        {/* ROW 2: DUAL TOGGLES (АВТО-ОТКРЫТИЕ & АВТО-ПРОДАЖА) */}
+        <View style={styles.dualTogglesRow}>
+          {/* 1. Авто-открытие тумблер */}
+          <TouchableOpacity
+            onPress={() => {
+              playClickSound();
+              if (autoOpen) {
+                handleStopAutoOpen();
+              } else {
+                setAutoOpen(true);
+                if (stageState === 'idle') {
+                  handleUnlockContainer();
+                }
+              }
+            }}
+            style={[
+              styles.togglePillBtn,
+              {
+                backgroundColor: autoOpen ? '#16A34A' : theme.surfaceBg,
+                borderColor: autoOpen ? '#22C55E' : theme.cardBorder,
+              },
+            ]}
+          >
+            <Ionicons
+              name="sync-circle-outline"
+              size={14}
+              color={autoOpen ? '#FFFFFF' : theme.textSecondary}
+            />
+            <Text
+              allowFontScaling={false}
+              style={[
+                styles.togglePillText,
+                { color: autoOpen ? '#FFFFFF' : theme.textPrimary },
+              ]}
+            >
+              Авто: {autoOpen ? 'ВКЛ ⚡' : 'ВЫКЛ'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* 2. Авто-продажа тумблер + настройка качества */}
+          <View style={styles.autoSellGroup}>
+            <TouchableOpacity
+              onPress={() => {
+                playClickSound();
+                setAutoSell((v) => !v);
+              }}
+              style={[
+                styles.togglePillBtn,
+                {
+                  backgroundColor: autoSell ? '#2563EB' : theme.surfaceBg,
+                  borderColor: autoSell ? '#3B82F6' : theme.cardBorder,
+                  flex: 1,
+                },
+              ]}
+            >
+              <Ionicons
+                name="cash-outline"
+                size={14}
+                color={autoSell ? '#FFFFFF' : theme.textSecondary}
+              />
+              <Text
+                allowFontScaling={false}
+                numberOfLines={1}
+                style={[
+                  styles.togglePillText,
+                  { color: autoSell ? '#FFFFFF' : theme.textPrimary },
+                ]}
+              >
+                Авто-продажа: {autoSell ? 'ВКЛ' : 'ВЫКЛ'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                playClickSound();
+                setAutoSellModalOpen(true);
+              }}
+              style={[
+                styles.gearThresholdBtn,
+                {
+                  backgroundColor: theme.surfaceBg,
+                  borderColor: theme.cardBorder,
+                },
+              ]}
+            >
+              <Text
+                allowFontScaling={false}
+                style={[styles.gearThresholdLabel, { color: currentThresholdObj.color }]}
+              >
+                {currentThresholdObj.label.split(' ')[0]}
+              </Text>
+              <Ionicons name="options-outline" size={13} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* MAIN BIG ACTION / UNLOCK / STOP BUTTON */}
+        {autoOpen ? (
+          <TouchableOpacity
+            onPress={handleStopAutoOpen}
+            style={styles.stopAutoOpenBtn}
+          >
+            <Ionicons name="stop-circle" size={18} color="#FFFFFF" />
+            <Text allowFontScaling={false} style={styles.stopAutoOpenBtnText}>
+              СТОП АВТО-ОТКРЫТИЕ
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            disabled={stageState === 'spinning'}
+            onPress={handleUnlockContainer}
+            style={[
+              styles.cs2GreenUnlockBtn,
+              stageState === 'spinning' && { opacity: 0.6 },
+            ]}
+          >
+            <Text allowFontScaling={false} style={styles.cs2GreenUnlockText}>
+              {stageState === 'spinning'
+                ? 'ОТКРЫВАЕМ КОНТЕЙНЕР...'
+                : `РАЗБЛОКИРОВАТЬ (x${openCount}) • $${totalOpenCost.toFixed(2)}`}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* ==================== AUTO-SELL THRESHOLD MODAL ==================== */}
+      <Modal
+        visible={autoSellModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAutoSellModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: theme.cardBg,
+                borderColor: theme.cardBorder,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text
+                  allowFontScaling={false}
+                  style={[styles.modalTitle, { color: theme.textPrimary }]}
+                >
+                  Настройка авто-продажи
+                </Text>
+                <Text
+                  allowFontScaling={false}
+                  style={[styles.modalSubtitle, { color: theme.textSecondary }]}
+                >
+                  Выберите, какое качество скинов сразу продавать
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setAutoSellModalOpen(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color={theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ marginTop: 12, gap: 8 }}>
+              {AUTO_SELL_OPTIONS.map((opt) => {
+                const active = autoSellThreshold === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    onPress={() => {
+                      playClickSound();
+                      setAutoSellThreshold(opt.key);
+                      setAutoSell(opt.key !== 'none');
+                      setAutoSellModalOpen(false);
+                    }}
+                    style={[
+                      styles.thresholdOptionRow,
+                      {
+                        backgroundColor: theme.surfaceBg,
+                        borderColor: active ? opt.color : theme.cardBorder,
+                        borderWidth: active ? 2 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        allowFontScaling={false}
+                        style={[styles.thresholdOptionTitle, { color: opt.color }]}
+                      >
+                        {opt.label}
+                      </Text>
+                      <Text
+                        allowFontScaling={false}
+                        style={[styles.thresholdOptionDesc, { color: theme.textSecondary }]}
+                      >
+                        {opt.desc}
+                      </Text>
+                    </View>
+                    {active && (
+                      <Ionicons name="checkmark-circle" size={20} color={opt.color} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
-// Keep CaseRouletteModal for backward compatibility if needed
+// Keep CaseRouletteModal export for backward compatibility
 export const CaseRouletteModal: React.FC<any> = () => null;
 
 const styles = StyleSheet.create({
-  screenContainer: {
+  rootContainer: {
     flex: 1,
   },
-  topBar: {
+  caseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
+    borderBottomWidth: 1,
   },
   backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  backBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
+    padding: 6,
   },
   caseHeaderTitle: {
     fontSize: 15,
@@ -689,24 +1047,24 @@ const styles = StyleSheet.create({
   stageContainer: {
     borderRadius: 14,
     borderWidth: 1,
-    padding: 14,
+    padding: 12,
     marginBottom: 14,
-    minHeight: 205,
+    minHeight: 230,
     justifyContent: 'center',
     alignItems: 'center',
   },
   idleStageBox: {
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 10,
   },
   heroCaseImage: {
-    width: 190,
-    height: 145,
+    width: 250,
+    height: 185,
   },
   idleHintText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 8,
+    marginTop: 10,
     textAlign: 'center',
   },
   spinningStageBox: {
@@ -715,26 +1073,58 @@ const styles = StyleSheet.create({
   },
   trackContainer: {
     width: TRACK_WIDTH,
-    height: 152,
-    borderRadius: 10,
-    borderWidth: 1,
+    height: 184,
+    borderRadius: 12,
+    borderWidth: 1.5,
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   trackContainerCompact: {
-    height: 98,
-    marginBottom: 5,
+    height: 110,
+    marginBottom: 6,
   },
   centerMarkerLine: {
     position: 'absolute',
-    left: TRACK_WIDTH / 2 - 1,
+    left: TRACK_WIDTH / 2 - 1.5,
     top: 0,
     bottom: 0,
-    width: 2,
+    width: 3,
     backgroundColor: '#EAB308',
     zIndex: 20,
+    shadowColor: '#EAB308',
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  topPointer: {
+    position: 'absolute',
+    top: 0,
+    left: TRACK_WIDTH / 2 - 7,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderTopWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#EAB308',
+    zIndex: 22,
+  },
+  bottomPointer: {
+    position: 'absolute',
+    bottom: 0,
+    left: TRACK_WIDTH / 2 - 7,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderBottomWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#EAB308',
+    zIndex: 22,
   },
   stripRow: {
     flexDirection: 'row',
@@ -742,49 +1132,49 @@ const styles = StyleSheet.create({
   },
   rouletteCard: {
     width: CARD_WIDTH,
-    height: 134,
+    height: 164,
     marginHorizontal: CARD_MARGIN,
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    padding: 10,
     justifyContent: 'space-between',
     overflow: 'hidden',
   },
   rouletteCardCompact: {
-    height: 86,
+    height: 98,
     padding: 6,
   },
   rouletteImg: {
     width: '100%',
-    height: 78,
+    height: 104,
   },
   rouletteImgCompact: {
     width: '100%',
-    height: 44,
+    height: 52,
   },
   goldMysteryBox: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(234, 179, 8, 0.14)',
+    backgroundColor: 'rgba(234, 179, 8, 0.16)',
     borderRadius: 8,
   },
   goldStarText: {
     color: '#EAB308',
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '900',
   },
   goldMysteryLabel: {
     color: '#EAB308',
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '800',
   },
   rWeapon: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '600',
   },
   rName: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   rBottomBar: {
@@ -799,17 +1189,32 @@ const styles = StyleSheet.create({
   resultHeaderLabel: {
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.4,
+    marginBottom: 6,
+  },
+  autoSoldAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(22, 163, 74, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(22, 163, 74, 0.3)',
+  },
+  autoSoldAlertText: {
+    color: '#22C55E',
+    fontSize: 11,
+    fontWeight: '700',
   },
   singleDropShowcase: {
     alignItems: 'center',
-    marginVertical: 8,
+    width: '100%',
   },
   singleDropBadges: {
     flexDirection: 'row',
     gap: 6,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
     marginBottom: 6,
   },
   rarityTagPill: {
@@ -823,13 +1228,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   stTagPill: {
-    backgroundColor: 'rgba(249, 115, 22, 0.18)',
+    backgroundColor: '#F97316',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   stTagPillText: {
-    color: '#F97316',
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '800',
   },
@@ -843,72 +1248,80 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   singleDropImg: {
-    width: 210,
-    height: 135,
-    marginVertical: 4,
+    width: 270,
+    height: 180,
+    marginVertical: 6,
   },
   singleDropTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
   },
   singleDropFloat: {
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 2,
   },
   singleDropPrice: {
-    color: '#16A34A',
     fontSize: 20,
     fontWeight: '900',
+    color: '#16A34A',
     marginTop: 4,
   },
   multiDropItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 9,
-    borderRadius: 10,
+    padding: 8,
+    borderRadius: 8,
     borderLeftWidth: 4,
     marginBottom: 6,
   },
   multiDropImg: {
-    width: 56,
-    height: 40,
+    width: 48,
+    height: 38,
   },
   multiDropName: {
     fontSize: 12,
     fontWeight: '700',
   },
   multiDropPrice: {
-    color: '#16A34A',
     fontSize: 13,
     fontWeight: '800',
+    color: '#16A34A',
+  },
+  soldBadgeSmall: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#22C55E',
+    marginTop: 2,
   },
   resultActionsRow: {
     flexDirection: 'row',
     gap: 8,
+    marginTop: 12,
     width: '100%',
-    marginTop: 8,
   },
   resultSecondaryBtn: {
     flex: 1,
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   resultSecondaryBtnText: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   resultSellBtn: {
-    flex: 1,
+    flex: 1.5,
     backgroundColor: '#16A34A',
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   resultSellBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
   contentsHeaderRow: {
@@ -916,22 +1329,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
-    flexWrap: 'wrap',
-    gap: 6,
   },
   contentsTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.4,
   },
   goldFilterPill: {
-    backgroundColor: 'rgba(234, 179, 8, 0.16)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.4)',
   },
   goldFilterPillText: {
-    color: '#D97706',
+    color: '#EAB308',
     fontSize: 11,
     fontWeight: '800',
   },
@@ -948,52 +1360,53 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 148,
+    minHeight: 160,
   },
   goldCircleIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: 'rgba(234, 179, 8, 0.14)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 12,
   },
   goldSpecialTitle: {
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'center',
-    marginTop: 8,
   },
   goldSpecialSub: {
     fontSize: 10,
-    fontWeight: '600',
     textAlign: 'center',
+    marginBottom: 8,
   },
   bottomUnlockBar: {
     position: 'absolute',
-    bottom: 68,
+    bottom: 0,
     left: 0,
     right: 0,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 24,
     borderTopWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
+    gap: 8,
   },
   controlsTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   multiPillsRow: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 5,
   },
   countPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    width: 38,
+    height: 30,
     borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   countPillText: {
     fontSize: 12,
@@ -1004,23 +1417,129 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    height: 30,
     borderRadius: 8,
   },
   fastPillText: {
     fontSize: 11,
+    fontWeight: '700',
+  },
+  dualTogglesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  togglePillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+  },
+  togglePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  autoSellGroup: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  gearThresholdBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 32,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  gearThresholdLabel: {
+    fontSize: 10,
     fontWeight: '800',
   },
   cs2GreenUnlockBtn: {
     backgroundColor: '#16A34A',
-    borderRadius: 10,
-    paddingVertical: 13,
+    height: 46,
+    borderRadius: 12,
+    justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#16A34A',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
   },
   cs2GreenUnlockText: {
     color: '#FFFFFF',
     fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  stopAutoOpenBtn: {
+    backgroundColor: '#DC2626',
+    height: 46,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#DC2626',
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  stopAutoOpenBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  modalTitle: {
+    fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.4,
+  },
+  modalSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  thresholdOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+  },
+  thresholdOptionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  thresholdOptionDesc: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });

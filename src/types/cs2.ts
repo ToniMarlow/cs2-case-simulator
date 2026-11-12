@@ -6,6 +6,20 @@ export type WearShort = 'FN' | 'MW' | 'FT' | 'WW' | 'BS';
 
 export type ThemeMode = 'bright' | 'cyber_blue' | 'obsidian';
 
+export type AutoSellThreshold = 'none' | 'milspec' | 'restricted' | 'classified' | 'all_except_gold';
+
+export interface CS2Agent {
+  id: string;
+  name: string;
+  fullName: string;
+  fraction: string;
+  team: 'CT' | 'T';
+  teamName: string;
+  color: string;
+  rarity: string;
+  image: string;
+}
+
 export type CaseBattleMode = 'clutch' | 'terminal' | 'reverse' | 'shared';
 
 export type CaseBattleFormat = '1v1' | '1v1v1' | '2v2';

@@ -119,14 +119,15 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
   const totalCost = Number(selectedCases.reduce((sum, c) => sum + c.price, 0).toFixed(2));
   const activeModeInfo = BATTLE_MODES.find((m) => m.id === mode) || BATTLE_MODES[0];
 
-  const handleAddCase = (c: CaseContainer) => {
+  const handleAddCase = (c: CaseContainer, count = 1) => {
     if (isRunning) return;
-    if (selectedCases.length >= 5) {
-      onNotify('Максимум 5 кейсов', 'В одну битву можно добавить до 5 кейсов.', 'warning');
+    if (selectedCases.length + count > 50) {
+      onNotify('Лимит 50 кейсов', `В битву можно добавить максимум 50 кейсов (сейчас ${selectedCases.length}).`, 'warning');
       return;
     }
     playClickSound();
-    setSelectedCases((prev) => [...prev, c]);
+    const additions = Array.from({ length: count }, () => c);
+    setSelectedCases((prev) => [...prev, ...additions]);
   };
 
   const handleRemoveCase = (index: number) => {
@@ -486,16 +487,27 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
         {/* Cases Lineup */}
         <View style={[styles.rowBetween, { marginTop: 14, marginBottom: 8 }]}>
           <Text style={[styles.label, { color: theme.textSecondary, marginBottom: 0 }]}>
-            КЕЙСЫ В БИТВЕ ({selectedCases.length}/5)
+            КЕЙСЫ В БИТВЕ ({selectedCases.length}/50)
           </Text>
-          <TouchableOpacity
-            disabled={isRunning}
-            onPress={() => setCasePickerOpen(true)}
-            style={styles.addCaseTriggerBtn}
-          >
-            <Ionicons name="add" size={15} color="#FFFFFF" />
-            <Text style={styles.addCaseTriggerText}>Добавить кейс</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {selectedCases.length > 1 && !isRunning && (
+              <TouchableOpacity
+                onPress={() => setSelectedCases([selectedCases[0]])}
+                style={[styles.clearCasesBtn, { backgroundColor: theme.surfaceBg }]}
+              >
+                <Ionicons name="trash-outline" size={13} color={theme.textMuted} />
+                <Text style={[styles.clearCasesBtnText, { color: theme.textMuted }]}>Сбросить</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              disabled={isRunning}
+              onPress={() => setCasePickerOpen(true)}
+              style={styles.addCaseTriggerBtn}
+            >
+              <Ionicons name="add" size={15} color="#FFFFFF" />
+              <Text style={styles.addCaseTriggerText}>Добавить (+1,+5,+10)</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -668,15 +680,11 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420, marginTop: 12 }}>
+            <ScrollView style={{ maxHeight: 380, marginTop: 12 }}>
               <View style={styles.pickerGrid}>
                 {CS2_CASES.map((c) => (
-                  <TouchableOpacity
+                  <View
                     key={c.id}
-                    onPress={() => {
-                      handleAddCase(c);
-                      setCasePickerOpen(false);
-                    }}
                     style={[
                       styles.pickerCaseCard,
                       {
@@ -697,10 +705,40 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
                       {c.name.replace('Кейс ', '')}
                     </Text>
                     <Text style={styles.caseSlotPrice}>${c.price.toFixed(2)}</Text>
-                  </TouchableOpacity>
+
+                    <View style={styles.pickerQuickRow}>
+                      <TouchableOpacity
+                        onPress={() => handleAddCase(c, 1)}
+                        style={[styles.pickerQuickBtn, { backgroundColor: '#16A34A' }]}
+                      >
+                        <Text style={styles.pickerQuickBtnText}>+1</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleAddCase(c, 5)}
+                        style={[styles.pickerQuickBtn, { backgroundColor: '#2563EB' }]}
+                      >
+                        <Text style={styles.pickerQuickBtnText}>+5</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleAddCase(c, 10)}
+                        style={[styles.pickerQuickBtn, { backgroundColor: '#7C3AED' }]}
+                      >
+                        <Text style={styles.pickerQuickBtnText}>+10</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 ))}
               </View>
             </ScrollView>
+
+            <TouchableOpacity
+              onPress={() => setCasePickerOpen(false)}
+              style={styles.pickerDoneBtn}
+            >
+              <Text style={styles.pickerDoneBtnText}>
+                ГОТОВО (ВЫБРАНО {selectedCases.length}/50)
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -944,5 +982,47 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 8,
     alignItems: 'center',
+  },
+  pickerQuickRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 6,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  pickerQuickBtn: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  pickerQuickBtnText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  pickerDoneBtn: {
+    marginTop: 12,
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  pickerDoneBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  clearCasesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 7,
+  },
+  clearCasesBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -1,4 +1,16 @@
-import { CaseContainer, InventoryItem, QuestItem, RARITIES, RarityKey, SkinTemplate, WearShort } from '../types/cs2';
+import {
+  CaseContainer,
+  CS2RankInfo,
+  DailyCareReward,
+  InventoryItem,
+  MarketTrendInfo,
+  PremierRatingInfo,
+  QuestItem,
+  RARITIES,
+  RarityKey,
+  SkinTemplate,
+  WearShort,
+} from '../types/cs2';
 
 const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocG';
 function u(path: string): string {
@@ -11,6 +23,181 @@ function s(id: string, weapon: string, name: string, rarity: RarityKey, basePric
 export const TOURNAMENT_STICKERS = [{"name":"Natus Vincere | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI6-obi4xe_F0SpycTm_3NfuauvafFpIfHBXmTImLoj5bVtSSqxkxx04GzQn9esbzvJOV84pacW")},{"name":"Virtus.pro | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI64pe6ugvkFUWgnc6xrnsKuKP9bPNscqjFDzHHlu90sbM5TX2wxkp14WTUnMHpLyyrjSYF-g")},{"name":"G2 Esports | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI689W6vwzjRU3zzZW4rncCuPf_OvY_I6KRX2HEwO0ltuQ8GS_gxUt_4juAnsHpLyxV8rB6kA")},{"name":"FaZe Clan | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI68obu7xfjQB7zyMLlqHRdvPSsMaY5I6fDXjLFk-8ls7Y_HH7jlksl4jjcztqhbzvJOdEYnDi_")},{"name":"Team Spirit | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI655f9-BflEhimnc_i_nID7KD9MPVsIfPBCDCTlLly5LRoTirnzRxx4WzSyt36bzvJOfPBN-a5")},{"name":"Vitality | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI64o7g6xeyFET3n5Dm_yEDuqqvPPdrcPPCVjfHxblw4LZsH33rxEtz4WrWztehbzvJOfadTm_6")},{"name":"MOUZ | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI6-Yjh8Be0Eh6in8WypHtevaf9PfNsJqPECjLGl-wh57doG3_hk05wsGXRyIqhbzvJOX5ask-j")},{"name":"Complexity Gaming | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI695f48he3EEr1yJKxqHECt_esaqU9JaTHDDTHwr8vtbk-GHznlx525GTTw9_8bzvJOSvtUTwO")},{"name":"PGL | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI65ID4pFrhR0ilx5C5rXoI6aX4aqZpcfWSVmbAk7l0trE_GHjiwx9-5zjUn4q3MSXAPkkBAAI")},{"name":"Natus Vincere (Glitter) | Copenhagen 2024","image":u("@Jai0ki7VeTHjMmxPSnHtwI6-obi42bgTRTlipPys3YKuqKrO6c6cPGSDDLGxbcm4eRqGiuxxUsh522BztmuJH-QaQ8hCcNuBblds-7MWqE")}];
 
 export const INITIAL_CASES: CaseContainer[] = [
+  // ==================== BLACK MARKET CUSTOM CASES ====================
+  {
+    "id": "case_bm_knives",
+    "name": "★ Только Ножи (Knife Only)",
+    "subtitle": "Гарантированный редкий нож CS2: Керамбиты, Бабочки, M9",
+    "category": "black_market",
+    "price": 149.99,
+    "accentColor": "#FFD700",
+    "badgeTag": "100% НОЖ",
+    "customChances": { "gold": 100 },
+    "image": u("@JKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"),
+    "items": [
+      s("skin-vanilla-weapon_knife_kukri","★ Kukri Knife","Classic","gold",219.97,"@JKz2lu_XuWbwcuyMESA4Fdl-4nnpU7iQA3-kKnr8ytd6s2lfa9_Kb6VXmPGwuogsbNvSyi3zR4jsTnQztyqdS6QP1IoXpoiEeAC5Be5l9CxKaq8sIvgdE5J"),
+      s("skin-6dbefc59c1b9","★ Kukri Knife","Fade","gold",252.98,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q-vm8YZtsIc-VD2OV_uJ_t-l9AXyyzEohsGvVn4moIi-VO1N2CJR1E-UD4BXtkIXhMe2x7lbej4tEnyzgznQeN9c5PgA"),
+      s("skin-0808024a639a","★ Kukri Knife","Slaughter","gold",233.6,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q-vm8YZtsLc-JC2WCwNF6ueZhW2fmwkwj62TWmdyuc3nEOFB1Csd5ReFZtUTpxtXvYb_k4waPj4wXxXitkGoXuVwivb-T"),
+      s("skin-bc9e87f3c013","★ Kukri Knife","Blue Steel","gold",252.72,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q-vm8YZtsMc-RAnKVxdF6ueZhW2exzE0h62nVyd6qeXjEbgF0X8EiEbZesRS_wIXkPujq7wPWjNpDyn6vkGoXudm1ivk1"),
+      s("skin-d1ab66316ff3","★ Kukri Knife","Stained","gold",180.52,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q-vm8YZtsMc-VAXWTxOpJvOhuRz39lkgl52TXzdiscH2TOgAkX8QiRuFftxW6kNW1Yrzr7wOK2YkWxXr43zQJsHia9a0bCA"),
+      s("skin-bd871a344e30","★ Bowie Knife","Gamma Doppler","gold",187.67,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5sQiyhlBEjjDCEiI31JCLdO1JPVssnHaMU4EG-ltyyPuLq5gHYj9lMzyz7hyxNuCs-5OoDVKImrKTe21mXZ-Zu5I5Deqhh5Zn_hA"),
+      s("skin-2c801d044315","★ Bowie Knife","Gamma Doppler","gold",278.08,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5uTiS-lCIjvC2VlorrHjvPP0V1C_0sHLBS9g67l9G0Mu_q5ATZ3t1BxSn6in5B6yc9t7kHBaFw_aPQ3QiTNLQ_ssICOr_5Gko8dFgH"),
+      s("skin-e70487f0da3a","★ Bowie Knife","Gamma Doppler","gold",189.63,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5uTiS-lCIjvC2VlorrHjvPP0V1CP0sHLBS9g7tl4fgPujh71CNg91En36si3kY6ns-4OlQWfclqPbQ21zHZbVp4ZdWOr_5GrvoSFRK"),
+      s("skin-9143e6d4868c","★ Bowie Knife","Gamma Doppler","gold",304.35,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5uTiS-lCIjvC2VlorrHjvPP0V1Cf0sHLBS9g7sl9WzN-q27gLWiYxDxH3_2y4avyxp575WAvck_aGGjADAYrU6s8EBOr_5Gs3270vO"),
+      s("skin-965132fa7c08","★ Bowie Knife","Gamma Doppler","gold",343.86,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5uTiS-lCIjvC2VlorrHjvPP0V1Dv0sHLBS9g6-xoXnNr6xsQze2IxFy377iX4d7itr4ehWA_V0_aPT2VyTMudrs8YLOr_5GgyA1D52"),
+      s("skin-vanilla-weapon_knife_outdoor","★ Nomad Knife","Classic","gold",139.65,"@JKz2lu_XuWbwcuyMESA4Fdl-4nnpU7iQA3-kKnr8ytd6s2hfbBpL_-BQDPEw-hz57cxTnCxkEh_5jnVzor8dymXbgAiAsFyEOEMsBW8l9O1Ne38p1uJmh0Kkm0"),
+      s("skin-47d49e017564","★ Nomad Knife","Fade","gold",120.16,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1U-uaqZ6t_H_GSMWGRxetJvOhuRz39wUUksW7Vm4n7d3yUO1InXsdxTeQDukO4l9zuN7_j5QzYjIlFy3n6jDQJsHjNMoy1vA"),
+      s("skin-f18965313816","★ Nomad Knife","Crimson Web","gold",169.83,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1U-uaqZ6t_H_iKMXCVw_1JvOhuRz39xEV_sT6Bn9mueX3EP1QjApd4QbZe5EW6wIDmNO7islfW391EzCWt3TQJsHib9FqZhg"),
+      s("skin-74f72ddc6769","★ Nomad Knife","Slaughter","gold",75.2,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1U-uaqZ6t_H_GeMX2Vw_x3j-1gSCGn20R15TyGnNv_cS3GZlUnA5smTLEM4xDpx4bmY77h51OMiIJNziX53SJXrnE8R49sMsc"),
+      s("skin-2f7326c83e40","★ Nomad Knife","Case Hardened","gold",113.95,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1U-uaqZ6t_H_GCMWiZzetyj-1gSCGn2xhz5GyHwtr_dS7EOlR1DZtyEe8MsBO-xNKyNbnq7w3b2d8WzC7-jSNXrnE8rdGSE7w"),
+      s("skin-vanilla-weapon_knife_gypsy_jackknife","★ Navaja Knife","Classic","gold",102.46,"@JKz2lu_XuWbwcuyMESA4Fdl-4nnpU7iQA3-kKnr8ytd6s2pcbR-Oc-ZD2SbyuB_tuQnGXu1kBxw62_dwtird3qXZwQgXJV0E-4PtESxl4ezYr6x4FaMjI4UyzK-0H1iy36efQ"),
+      s("skin-39fd7c139081","★ Navaja Knife","Marble Fade","gold",198.29,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJsexWQiihlxEijDuEnorGLSLANkI-DpolR7Vf5hK5kdTlNbiwsg3YiNlCm3mq3Cgd6iZusetRUPJx-qTT2xaBb-MDauzVhA"),
+      s("skin-f69247021864","★ Navaja Knife","Tiger Tooth","gold",97.19,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJse9WWyC0kA8YvC-ElIj8HifOOV5kFMMlRLJf4BK4k9LlZuy35QTYg95NzXmri3tB6yk4sO5XBaoh_PDRhgHfcepqTt5nFFY"),
+      s("skin-3b5885a4c77d","★ Navaja Knife","Doppler","gold",179.2,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJsexWXTyxjCIqsi-HlorwOy7DAVp5Xco0W-cMsRO5x92yMe3r51Pd3d5Nn3isiy9LvSli5OZRAqYmq6OEiAuQZeIjoc5Uu2hkHeU"),
+      s("skin-b790da07f599","★ Navaja Knife","Doppler","gold",216.31,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJsexWXCijhRUuoTi6l47rIyfCN0x1Xv0sHLBS9g6_m4GzMr-xsgOIidhMyC743C1O53ti5ecCWPAmrqeCjg2QNbU06ZBROr_5GjZZEpGb"),
+      s("skin-b9e7dc445655","★ Navaja Knife","Fade","gold",247.97,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJseBWSSi3kCIrujqNjsH7c3qVOwV2DcZyQbQOukG5m4CyMeqz4laIgoxAnH_93Ckbvyw5troCT-N7rT3KN2DN"),
+      s("skin-8a6e4435f652","★ Navaja Knife","Crimson Web","gold",172.52,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJuPhWWCyxhiIrujqNjsGtJS-eag4iCpN4QrZYsEK_m9K0ZLzl4gOLiYgQxSj2in9Buis_5OZRT-N7rdEUHJYn"),
+      s("skin-4facadf19ddb","★ Navaja Knife","Slaughter","gold",118.39,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJsexWVSyxhxwYvzSCkpu3JSjFaQR0WZFwFOFYtBLtl4e2Nrmz4FHci4tAxCT8iipK6yc6sekKUL1lpPNhGLzFnw"),
+      s("skin-d3e9d06ca1c0","★ Navaja Knife","Case Hardened","gold",137.84,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1c9uK9cZtnIfOYBWmZx-tJsfBWQCC_kBkYvzSCkpu3eHKWaQ8jXpQkReZZtxa_x4HvYujh41HZg9pNzX2ojCJA7itpteYHBb1lpPM10bWGng"),
+      s("skin-fcaadd7c92cc","★ Bowie Knife","Marble Fade","gold",237.32,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5kTjuxmRgYtTyBn7D1KCzPKhgpXMdyTeBb5BPuktPvZOi2sgWM2d9HmSr-i3xAuidssO8HBKcsrvLXkUifZhxP_T8X"),
+      s("skin-90d3cf089321","★ Bowie Knife","Tiger Tooth","gold",374.73,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vt59Ri62hyIooTyLnYrGLSLANkI-XJJ0FLNY5BOxw4XjNu-zsQDd2IpFyy32jS0b7Ss95L5RVaIk_qyE3RaBb-Pz4OFuTg"),
+      s("skin-3ca96a918c35","★ Bowie Knife","Doppler","gold",232.31,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd57WiuqqhAmoT-Jn4bjJC_4Ml93UtZuQe5Y50O-wNzhMuji5w3e344Rny-q3H5K7iZtsekLU6El-6eBi1vHY6p9v8dqQrLELQ"),
+      s("skin-dfd71b7017a4","★ Bowie Knife","Doppler","gold",197.24,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd56TjmjnRQ1tgKIm537LS7OJFN0Zc4pEr9OrBaxl4KxNr7r5VHZiYtBzH-qiShJ7y1v4roHAvZ2qfLTjlvDOLw_sMIdZKHwjx9VvzI"),
+      s("skin-793b9eb6b4b7","★ Bowie Knife","Doppler","gold",212.17,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1I-uC4YbJsLM-RAXCZxNF3vd5rQyiwng0isi-JpYL4MynLO19qX8YfGb5d6lSmxt2yZeLq5QeI2dgWzSmsjiMauyxr5O4LB6Ej-6PXjVyQZLc54pZRJOHnE0pg4-kgmA"),
+      s("skin-9af6c8a5a9c1","★ Bayonet","Gamma Doppler","gold",177.16,"https://community.akamai.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpotLu8JAllx8zJfAJH4dmklYyPqPr1Ibndk2JL7cFOhuDG_Zi73VG2qUQ_am36LNKWcwM2Ml3X_FS8wL3vhMC0vJXOn3ZkuSAl7HiOmwv3308XDHXucw")
+    ]
+  },
+  {
+    "id": "case_bm_gloves",
+    "name": "★ Только Перчатки (Glove Special)",
+    "subtitle": "Sport Gloves, Specialist, Moto и Driver",
+    "category": "black_market",
+    "price": 119.99,
+    "accentColor": "#EAB308",
+    "badgeTag": "100% ПЕРЧАТКИ",
+    "customChances": { "gold": 100 },
+    "image": u("@JKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"),
+    "items": [
+      s("skin-7b51c8bd957b","★ Driver Gloves","Imperial Plaid","gold",233.37,"@IGz3UqlXOLrxM-vMGmW8VNxu5T441rsfhr9kYDl7h1I4_utY5t9LPGaCliA1PxmvORWQyC0nQlp4W-Hw9-ocy2fbwB2X8YkFucCtRe4xNzhYrjl4Fff39lMyn78iiJLuzErvbgqDAMwGQ"),
+      s("skin-ead101bfb2c9","★ Driver Gloves","King Snake","gold",213.58,"@IGz3UqlXOLrxM-vMGmW8VNxu5T441rsfhr9kYDl7h1I4_utY5t-LvGYC3SbyOBJp-lgWyyMmRQguynLz4r6Iy7EbFchApNyR-dbtEbuw4XkN7jq7gHdjtoQzi37hiwYvytvt_FCD_Ql24JgJg"),
+      s("skin-5e8f5f1fecb1","★ Driver Gloves","Racing Green","gold",205.73,"@IGz3UqlXOLrxM-vMGmW8VNxu5T441rsfhr9kYDl7h1I4_utY5t-NPmHDW-VxdFxouRsQRa0hxg-jDGMnYftb3mXblQnWJclRuNYtETux9DlYr-wtVaK2IsTmCT-jC4Y6ihjtr0FUaA7uvqAQikoKDk"),
+      s("skin-56be8a3a2bb8","★ Driver Gloves","Overtake","gold",110.31,"@IGz3UqlXOLrxM-vMGmW8VNxu5T441rsfhr9kYDl7h1I4_utY5t-NPmHDW-VxdF0vOBqRBa8hxwptDi6lob-KT-JOwYkXppzQO4OsRbqltfiMOvm41TYi44XySqqj35OvS4_57oKA6cl_LqX0V9d-bhOMA"),
+      s("skin-a4133c8cedcb","★ Hand Wraps","Cobalt Skulls","gold",112.31,"@IGz3UqlXOLrxM-vMGmW8VNxu4vx603vRA_Olpfu-TVJ7uK9V6xsLvSEHGaA_uJzsfVhSjuqqhsmsS-MmbD7LT7CAUV7T84sBohW60fg1srnZb6zsw2Ng41MmST43C1L7is9574CBKIh_q2Big_IMOdutcNRd_iuU13QD7PQAmaY"),
+      s("skin-ac0c22b15c7c","★ Broken Fang Gloves","Yellow-banded","gold",136.66,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnITv9idV6fOgb5tqLP-FC3Svzv5zouB9Ria9xE0YozKMiYD3Hi3VMVFPWM4hFrxl-0XkzougWLa7sF2alYpAyX__iClA5ntstuoEUqUirKeG2w3IYrZo4JRSLa2vRRvdWhwJsa98BNe077TKBCc"),
+      s("skin-27555a08b61e","★ Broken Fang Gloves","Unhinged","gold",171.07,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnITv9idV6fOgb5tqLP-FC3Svzv5zouB9Ria9xE0YoDOEkYrqKiLJAVR8W8ErKrtT5Uj8jNfuN-2wtgeNioNDxS7_jS4av31j5L4CVqV0rvLTigzCNeE5tZkCJqm5DUPZGadTirc"),
+      s("skin-a371f5d8dddc","★ Broken Fang Gloves","Needle Point","gold",80.69,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnITv9idV6fOgb5tqLP-FC3Svzv5zouB9Ria9xE0YtTGKiI71HifOOV5kFJQlQbUL4RHukofjY-227wDaidpHnCqs3H5K6So95ekLVKck__bW3Q_fcepqSI673wM"),
+      s("skin-82516a2fa315","★ Broken Fang Gloves","Jade","gold",184.96,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnITv9idV6fOgb5tqLP-FC3Svzv5zouB9Ria9xE0YvjiRm4PwIhTALFN1VP0sHLBS9g65w9exM-Pl5gaKidkRziX22yNIv306571QA6pwrKGDiluTZLxs5ZdXOr_5GlzOqAIa"),
+      s("skin-30ad2640a228","★ Driver Gloves","Snow Leopard","gold",174.11,"@IGz3UqlXOLrxM-vMGmW8VNxu5T441rsfhr9kYDl7h1I4_utY5tnIfeGD3Wv1uZ_pORWQyC0nQlp4TnUw9f6J3PCOw4oW8ZxRuEOshK8l9fgZbnqswHX3owXmSisjCIfuzErvbiEoDwfJQ"),
+      s("skin-de7d4238a5c9","★ Bloodhound Gloves","Snakebite","gold",4020.84,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnJrv8iZT4OegbJtqLP-FC3Svw-J5v-VhQDy9kSI0vTyOn5zyKCX4PERxSdEfGb5d6lSmxIfuMezmtFfb39lAxCivh3hI6Chi4eYGWfAt8vXTiw_EM7Q_t5NWIeHnE0qrynbE1A"),
+      s("skin-4e17d497a43e","★ Bloodhound Gloves","Bronzed","gold",3443.19,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnJrv8iZT4OegbJtqLP-FC3Svw-J5v-VhQDy9kSIqtimEloPwIhTLN1F4Tox2Q7UJ4RLrltDkMuyz4ASIg4kUxCr5jy8fvC46sLtWWaojqKze2giTL_Rjtvi23tdj"),
+      s("skin-c9241d03e33b","★ Bloodhound Gloves","Charred","gold",3152.99,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnJrv8iZT4OegbJtqLP-FC3Svw-J5v-VhQDy9kSIlvzyGkbDqKCfRO0RPVssnHaMUsES-k9HjNrixsgbd3YIRni7-inlO5i5t6-pRAqIs_aOFjg_JZbU5sI5Deqh-Veq-pA"),
+      s("skin-cd619968abb9","★ Bloodhound Gloves","Guerrilla","gold",1618.09,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tg_13jRBnOnJrv8iZT4OegbJtqLP-FC3Svw-J5v-VhQDy9kSIgpjiXiIb1LSr4Ml93UtZuR7QKthCwl4fkNuqw4lPXgosRzi78inwdvyk45e5UUqQkq_aDi1rEZap9v8fy7GQdug"),
+      s("skin-941014ee5a6e","★ Driver Gloves","Crimson Weave","gold",3507.09,"@IGz3UqlXOLrxM-vMGmW8VNxu5T441rsfhr9kYDl7h1I4_utY5t_JfSsAm6Xyfo4trVoSnGxlh9x5DmEzt6rJS2RagYiA5siQ-MLthW9xtDlM7uxtFCNgpUFk3thcTnRAg"),
+      s("kg_5","★ Sport Gloves","Vice (Порок)","covert",1950,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tk5UvzWCL2kpn2-DFk_OKherB0H_KfG2Kv0ed4u95lRi67gVNx4T-Bw434IHyVb1QlAsd1FOUDthG4xNznMu3m4QXXg90Wzn_33C1I8G81tLaDi_rK"),
+      s("kg_6","★ Sport Gloves","Pandora's Box","gold",5900,"@IGz3UqlXOLrxM-vMGmW8VNxu5Tk5UvzWCL2kpn2-DFk_OKherB0H-CGHHecxNF6ueZhW2exk01w4j7cmYn4eHPCbAMhApdwTOIN5BPsx9yyYu605FTeid0Uy3j3kGoXueKyz5wo")
+    ]
+  },
+  {
+    "id": "case_bm_awp",
+    "name": "Кейс AWP Empire",
+    "subtitle": "Dragon Lore, Gungnir, Medusa, Asiimov и Fade",
+    "category": "black_market",
+    "price": 49.99,
+    "accentColor": "#10B981",
+    "badgeTag": "ТОЛЬКО AWP",
+    "customChances": { "classified": 60, "covert": 40 },
+    "image": u("@JKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"),
+    "items": [
+      s("skin-b986a2456e28","AWP","Chrome Cannon","covert",41.01,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_DVL0OarZbRoMvWXMWuZxuZi_uM6SXngxR5-smTXw4ugIi6RbVcpXsN1ELUDtxPrktOyNL7h4g2P2tpbjXKpKIbjbD4"),
+      s("skin-d42f9ca97ef6","AWP","Duality","classified",11.52,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf-jFk7uW-V6hkLfKcMXSewOVzj-1gSCGn20p_62-HnN7_cH-XblQjDZYhR-FZsETqmoXjYry2s1DX3d5AyyT62ipXrnE8bpg5yZk"),
+      s("skin-3a4cc2c7a86f","AWP","Chromatic Aberration","covert",39.83,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6dlMv-eD1iAyOB9j-1gSCGn2x50tT_Tm9f4cXORPA4oWJckFOMLtha_x9e1Nu-35QfbjYtHyiythitXrnE8ylr09zg"),
+      s("skin-29f83d73bb6a","AWP","Capillary","milspec",0.86,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V7JoKf6sAm6Xyfo44bE5HSrmlx5z4GTUzt__I3yebQAgA8R3FuFfsBTqx9W2Y7vq5lbfjZUFk3ugIlCuqg"),
+      s("skin-d6cf8565026b","AWP","Atheris","restricted",3.05,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V7JkMPWBMWuZxuZi_rZsS3zgzU8isW3dnIr6eHKfPVAhDpojEe9YsUW4xta1Nuzm5FDci4NbjXKpmWVQppo"),
+      s("skin-c41637779316","AWP","Mortis","classified",8.28,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf-jFk7uW-V6BoIeSbMWuZxuZi_rNtHiuwwRwismWEnNn8JymSZgUiDpd3Ru9ZsxG-xNy2NLzn41DWg41bjXKp5oOAt0A"),
+      s("skin-7b1ef066823d","AWP","Neo-Noir","covert",22.51,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6poL_6cB3WvzedxuPUnHirrxR4l423SyI39I3KXPwdxWZclQeNZ5EXskYfnNeyw71OMi9lNzDK-0H3r66pOTw"),
+      s("skin-860a0652d07a","AWP","PAW","restricted",3.13,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_C9k7uW-V7RsN-CSGVicyOl-pK84Tn-3xkgltWWGnI39c3LDaA4lD5V0QO8It0LqktfuMOrq7gDajYJG02yg2bUm5WIV"),
+      s("skin-d85f6159fe4a","AWP","Fever Dream","classified",18.78,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V7R-OfObAXeR1eZJvOhuRz39kE1w4jiAzNiod3qTOgcgXpAlQ-ML5hjqxtHjZOrrtlHWit9EyCj9iDQJsHhCZP-wUg"),
+      s("skin-78882aeeb9a7","AWP","Phobos","restricted",3.01,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf-jFk7uW-V7RlL_KcHVicyOl-pK84GXHmwk115D6GzdqudHyUbwRxW5R3ROZbtEG8wYDiY7-x5VOKgotB02yg2bdJjfAf"),
+      s("skin-c97e27944006","AWP","Worm God","restricted",3.76,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_DNk7uW-V7B6Kf6WMWuZxuZi_uRoGH3iw0wh4j7cnt6ucSqSZwUkCMB5TLIPsES_kNbuYeOwtgXai4NbjXKpZ4kj0o0"),
+      s("skin-67b936c9cb52","AWP","Man-o'-war","covert",80.84,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_C9k7uW-V6NhL-KKMWuZxuZi_uM5HXG3xhh_t2iBnI2ucn3EZwEjDpJ0Q-dY5EPrxNTiYevj7gXa2IhbjXKpQIFOiXU"),
+      s("skin-69390026d135","AWP","Lightning Strike","covert",875.7,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_C9k4_upYLBjKf6UMWaH0dF6ueZhW2frwU1_sW2EmNyvc32RZwMpCpcjQ-EJ4xbtmt3gYezk4wzb3tpAy3mrkGoXubsGIfVN"),
+      s("skin-278adf18c50e","AWP","Graphite","classified",232.07,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_C9k7OC7ZbRhJc-RHGaGztF6ueZhW2e2k0l2sW_WzN7_cS6SbgV1CsF3TOEI4EOwloGzNLzg5g3fiIpHxC78kGoXuTqeOjwH"),
+      s("skin-cfaaa2fab447","AWP","Oni Taiji","covert",836.09,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6xsLv6KD1icyOl-pK9vGCqwkx524G_WnNmsInyXOAVyXJJ0TbNb5EOxxIflYbzj4gDdiNlC02yg2XaKgrAq"),
+      s("skin-bb633c21fc25","AWP","Asiimov","covert",180.18,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6V-Kf2cGFidxOp_pewnF3nhxEt0sGnSzN76dH3GOg9xC8FyEORftRe-x9PuYurq71bW3d8UnjK-0H0YSTpMGQ"),
+      s("skin-f2cdadd8b557","AWP","Elite Build","classified",24.76,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6lsM-SWHH6vzedxuPUnSnHmk0Qh4G6HmN-scXmSaQRxXJpwRuZYsxTqxtTnM7nl4gTW2dlFyjK-0H0d8XeEBg"),
+      s("skin-f8cd1aa7fa55","AWP","Containment Breach","covert",185.5,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V7JkMuWAMWuZxuZi_rQ6SXq1xURysj_Vw4uhJHOVPQ8oCZt4QrRbtRi6ldPlPu_g4FHaiYNbjXKpcPI_17A"),
+      s("skin-a89bff508437","AWP","Exoskeleton","restricted",8.97,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf-jFk7uW-V6F1L-OYC2uV1eF4j-1gSCGn20km5zyEmd2qc3uWZwcnA5MiELIJtxa_w9OyN-nh5wKKj4kTyn78hyNXrnE83OTew2I"),
+      s("skin-f787cc672771","AWP","Hyper Beast","covert",75.03,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6x0MPWBMWWVwP1ij-1gSCGn20pxtm_WzNuoeHKeaFAnCZUiTe5bt0HqxofmZOrm5Q2IjoMQzS_5iShXrnE8NzWs__c"),
+      s("bm_awp_medusa","AWP","Medusa (Медуза)","covert",1850,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk4veqfbdsH_GEHlicyOl-pK85TC23wk12tWSGnNr6JXqRPVUnA5J5RLIKshS-l4HuYbji7lfajdgU02yg2bOcOBD3"),
+      s("bm_awp_gungnir","AWP","Gungnir (Гунгнир)","gold",6400,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf-jFk7uW-V6N4LvedB3WvzedxuPUnHnjnzUl0sWrdztitI3rDZgJzAsZ1QOFY4UPqldDgMO_l41HXit9AmTK-0H227dAsvQ"),
+      s("bm_awp_dlore","AWP","Dragon Lore (История о драконе)","gold",8500,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk4veqYaF7IfysCnWRxuF4j-B-Xxa_nBovp3Pdwtj9cC_GaAd0DZdwQu9fuhS4kNy0NePntVTbjYpCyyT_3CgY5i9j_a9cBkcCWUKV"),
+      s("skin-4f8d99d09ded","AWP","Dragon Lore","covert",665.62,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk4veqYaF7IfysCnWRxuF4j-B-Xxa_nBovp3Pdwtj9cC_GaAd0DZdwQu9fuhS4kNy0NePntVTbjYpCyyT_3CgY5i9j_a9cBkcCWUKV"),
+      s("skin-05f333baf59c","AWP","Black Nile","milspec",1.64,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf-jFk7uW-V7d5Mv-dC1icyOl-pK89Gyvhlhsit2-BwoyrICmWPQcmDpEkQOdeskOxwNKzN7vm4VeP2oMR02yg2Z2CmmVC"),
+      s("skin-9e9b9cd050d5","AWP","Acheron","milspec",1.94,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf9Ttk4eetZKFsMs-ABXKczf1JouRtTSWmkCIrujqNjsH4eC-ROFMkDccjR7EDsBCxlN2xZu7jtlaNj4pMxSr8hiIc53tt67kHT-N7rafi4HxI"),
+      s("skin-665b5d16532c","AWP","Pink DDPAT","restricted",5.59,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf9Ttk6_a-abBSMPmdBVicyOl-pK9qHXC2zUpz5DiBn9arJCmXOFd0DZpxQOUDtBC6wNK0MOzl4wXWjYpG02yg2c9nQ1pb")
+    ]
+  },
+  {
+    "id": "case_bm_5050",
+    "name": "Кейс 50/50: Всё или Ничего",
+    "subtitle": "Либо AWP Dragon Lore / M9 Doppler, либо P250 Sand Dune за $0.10",
+    "category": "black_market",
+    "price": 79.99,
+    "accentColor": "#EF4444",
+    "badgeTag": "50% ДЖЕКПОТ",
+    "customChances": { "milspec": 50, "covert": 25, "gold": 25 },
+    "image": u("@JKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"),
+    "items": [
+      s("skin-p250-sanddune", "P250", "Sand Dune", "milspec", 0.12, "@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLijZGwpR1I_PX-MJtpJeqSHXOCxNF6ueZhW2exwEp2tmmEw9epdCjCalQhX5ImQOZbtRixxNTgN-u24AHb2okTmX2vkGoXuacR7BX3"),
+      s("skin-b986a2456e28","AWP","Chrome Cannon","covert",41.01,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_DVL0OarZbRoMvWXMWuZxuZi_uM6SXngxR5-smTXw4ugIi6RbVcpXsN1ELUDtxPrktOyNL7h4g2P2tpbjXKpKIbjbD4"),
+      s("skin-vanilla-weapon_knife_kukri","★ Kukri Knife","Classic","gold",219.97,"@JKz2lu_XuWbwcuyMESA4Fdl-4nnpU7iQA3-kKnr8ytd6s2lfa9_Kb6VXmPGwuogsbNvSyi3zR4jsTnQztyqdS6QP1IoXpoiEeAC5Be5l9CxKaq8sIvgdE5J"),
+      s("skin-6dbefc59c1b9","★ Kukri Knife","Fade","gold",252.98,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL6kJ_m-B1Q-vm8YZtsIc-VD2OV_uJ_t-l9AXyyzEohsGvVn4moIi-VO1N2CJR1E-UD4BXtkIXhMe2x7lbej4tEnyzgznQeN9c5PgA")
+    ]
+  },
+  {
+    "id": "case_bm_covert",
+    "name": "Кейс Только Тайное",
+    "subtitle": "Красные скины: AK-47, M4A1-S, USP-S, AWP",
+    "category": "black_market",
+    "price": 24.99,
+    "accentColor": "#EB4B4B",
+    "badgeTag": "100% ТАЙНОЕ",
+    "customChances": { "covert": 100 },
+    "image": u("@JKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"),
+    "items": [
+      s("skin-b986a2456e28","AWP","Chrome Cannon","covert",41.01,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_DVL0OarZbRoMvWXMWuZxuZi_uM6SXngxR5-smTXw4ugIi6RbVcpXsN1ELUDtxPrktOyNL7h4g2P2tpbjXKpKIbjbD4"),
+      s("skin-82dc98e09ba6","AK-47","Inheritance","covert",32.34,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiNQ0OKheqdoLPGaAFicyOl-pK8xGH_nwUt1sGrSz9ivcHKQOAcjXMYkRu5Yuxe4lYCyZOq25VSM2oMT02yg2UxBSEgA"),
+      s("skin-5bd16f2599cf","Glock-18","Gold Toof","covert",49.08,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL2kpnj9h1c4_2tY5tuKP-eHmKC_uJ_t-l9ASvik00m5TmEzd-geSiQPARxX5IiTLIMtBW4l9zmNuPr4VbbjItHxC_gznQeqLQCTjk"),
+      s("skin-aa9558c8a01f","M4A1-S","Vaporwave","covert",30.01,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwjFS4_ega6F_H_3HDzaD_vh3oO57WCilkCIrujqNjsH_In7DZgYnWcAiR-MJshO6koDlN7vhsQyLi41HySX6iXlAvCZrsb0HT-N7rW-9qIHE"),
+      s("skin-405f5570d1f6","AK-47","Nightwish","covert",42.19,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlPPNSLvmUBnOHyP1-j-1gSCGn20glt2nXnt78cnKUbwN2XJp2R-ZbuxHqlNXlMLiw5AHc3toWnCur23hXrnE8p0T2bx4"),
+      s("skin-feae180c4968","MP9","Starlight Protector","covert",31.64,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f-jFk4uL3V7d5IeKfB2CY1dF6ueZhW2flkUtztz_SzYypJSqRalUhDJNwQO4PsBXtx9HkN-K37w3bgohGmHn3kGoXuZ3lRdvF"),
+      s("skin-1aba3ea9ecc5","M4A4","Temukau","covert",28.74,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwiFO0P_6afBSNPWeG2yR1NF6ueZhW2ewlBtx5W6AmYv9JS6XaAV1CJEmTeUL4UTpxNzjZO3jtgaIjN9ExCuskGoXuRnyRhBA"),
+      s("skin-1f95db2031e4","AK-47","Head Shot","covert",39.65,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlV6xoIfSsHW-f1dF-v-1mcCW6khUz_TzRnNigd3-SOg4lAsF1QOQN4xS4wdHnMu-0swaMjIxExSSoiyof6ih1o7FVGHIdVhw"),
+      s("skin-be37abed2b4d","USP-S","Printstream","covert",34.15,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLkjYbf7itX6vytbbZSI-WsG3SA_v5kue99XD2hkBwqjDGMnYftb3yUPFR0XsNyRrNc5kO5ltziMenr5lONj4kXyi2riywc7y9o5LtQAqQ7uvqAkScWnv4"),
+      s("skin-3a4cc2c7a86f","AWP","Chromatic Aberration","covert",39.83,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6dlMv-eD1iAyOB9j-1gSCGn2x50tT_Tm9f4cXORPA4oWJckFOMLtha_x9e1Nu-35QfbjYtHyiythitXrnE8ylr09zg"),
+      s("skin-32a30647e564","Desert Eagle","Printstream","covert",35.83,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL1m5fn8Sdk7OeRbKFsJ8-DHG6e1f1iouRoQha_nBovp3OGmdeqInyVP1V0XsYlRbEI50a5wNyzZr605AyI3t5MmCSohylAuC89_a9cBoMY9UkV"),
+      s("skin-dfd42a079f44","AK-47","Legion of Anubis","covert",29.49,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlPPNSIf6GDG6D_uJ_t-l9AX_nzBhw4TvWwo6udC2QbgZyWcN2RuMP4xHrlYDnYezm7geP3d5FyH3gznQeY_Oe4QY"),
+      s("skin-7dc4b0b65850","USP-S","The Traitor","covert",37.77,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLkjYbf7itX6vytbbZSJ-OsG3SA0tF-se9uSi2-lBMYvzSCkpu3eX7EP1MpApdwR-8NsxbukoXuNLnj4QOMiN8XzHn_iC8a7Spi4upRWb1lpPOCQNKXgA"),
+      s("skin-c62d08aa8da1","M4A4","In Living Color","covert",17.78,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwiFO0P_6afBSLP-FC1icyOl-pK84GH2wxhty4DjcyNuhdHyXbAVxW8QjTbEMthC8kNa0MLmzs1Hbj95E02yg2bbWGcKW"),
+      s("skin-4dd5dccd2fdd","M4A1-S","Player Two","covert",42.82,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwjFS4_ega6F_H_OGMWrEwL9lj-J6SCbhxUl_jDGMnYftby7BbVdyCsB0EeZY4RPukNfhZOO2sQ3W398Qy3_6jHxIunptsO9TUqs7uvqAAWrfZoM"),
+      s("skin-3596d60709cc","Glock-18","Bullet Queen","covert",19.67,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL2kpnj9h1Y-s2pZKtuK6HLMXCR0-N3ueVsQRa_nBovp3PQydf4dXuSalUgCJZwRrILthi9kYDlMe_m4g2Ij90Um3moiXkc6SZj_a9cBgLxwlYC"),
+      s("skin-f971772d4996","Five-SeveN","Angry Mob","covert",35.81,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL3l4Dl7idN6vyRa7FSJvmFC1iDxPhzvt5oQS6hjCIrujqNjsH_cy2RagUjA8BwR-de5hjskNflNrnqsgaLiYgRyyythitM7Hw-sekKT-N7rXEld5dH"),
+      s("skin-8c5b9b7ce9f2","M4A4","The Emperor","covert",39.1,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwiVI0P_6afBSJf2DC3Wf09F6ueZhW2exwBh_6m3dnt36InjDPQ4oXJt1TbJeshW_mtfjN-vrsgaKiokWy333kGoXuRj4z9Nd"),
+      s("skin-e8144faeae9f","M4A4","Neo-Noir","covert",32.19,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8ypexwiFO0P_6afBSLvWcMWmfyPxJvOhuRz39wE1142vSztmvInvBOgV0W5R1FLYNuxW4wIbgNrmx4g2Kj4tMmCX93zQJsHgJr0dqFw"),
+      s("skin-d11a70424dd7","MP7","Bloodsport","covert",46.08,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8jsHf-jFk4uL5V6ZhL_-XHXef0_pJvOhuRz39lxsk4W3Ry96pIHrFOgElDZN2Q-9etUSwk4LnYu3h5wLejYwWxSr43zQJsHiIGMoJQA"),
+      s("skin-09205674e246","AK-47","Asiimov","covert",33.38,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlPPNSIeOaB2qf19F6ueZhW2e2wEt-t2jcytf6dymSO1JxA5oiRecLsRa5kIfkYr-241aLgotHz3-rkGoXuUp8oX57"),
+      s("skin-7b1ef066823d","AWP","Neo-Noir","covert",22.51,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwiYbf_jdk7uW-V6poL_6cB3WvzedxuPUnHirrxR4l423SyI39I3KXPwdxWZclQeNZ5EXskYfnNeyw71OMi9lNzDK-0H3r66pOTw"),
+      s("skin-74e670c4b279","AK-47","Neon Rider","covert",38.14,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlV6poL_6sHG6UxPxJvOhuRz39xkQhsTnVzoygdy7Ea1UoCZQkRe9bs0brl9TvN-m0tVHYjY5CyS35jjQJsHhk4o5zcA"),
+      s("skin-87ee5eacc505","Desert Eagle","Code Red","covert",43.05,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL1m5fn8Sdk6OGRbKFsJ_yWMWaXxvxzo_JmXRa_nBovp3PRmNj4c3mTb1RxC5cjF-EItRnrlNzkYrnk5gaI3Y0UmyX52H9K7ixs_a9cBsGEcOCn"),
+      s("skin-1b3ca668024e","AK-47","The Empress","covert",68.8,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiVI0POlPPNSJf2DHGKD0tF6ueZhW2exxEt152rWzI7_Ii-Ubw90DMB0Ee4C5xOwx9GxZbjk71PXgogWn36tkGoXudZeYvlo"),
+      s("skin-491a70af3255","P250","See Ya Later","covert",54.66,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLhzMOwwiFO0OL8PfRSI-mRC3WT0-F1j-1gSCGn2x9ytmzWnN6pInjGOwMlDZp0EORe5BHsx93lP7zr5wzbiI5AyXr_jS9XrnE8gQrIgng"),
+      s("skin-ba052cf18c66","AK-47","Bloodsport","covert",73.91,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiVI0POlPPNSIvycAWOD0eFkpN5lRi67gVN15mmDw9egci_EPFAkDMQlTeZe4EXplNa0Yrvr5wbd345GyHioiC4b8G81tFuqg_k_"),
+      s("skin-0770dabcd885","USP-S","Neo-Noir","covert",88.91,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLkjYbf7itX6vytbbZSI-WsG3SA0tF4v-h7cCW6khUz_WXdmd-vI3uRPwEkApR4QuBcu0Xrk4biYr_mtQXdidlCz3r63Ska7Hx1o7FVWuokIcU"),
+      s("skin-1a5e885d9d28","AK-47","Neon Revolution","covert",83.75,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLwlcK3wiFO0POlPPNSIf6SHGSY2NF6ueZhW2e3w0524mjQzomreXqVbAAhWJF3RuZfuxC5x920Yurh7gONjY0RxHr4kGoXuT5bpI-V"),
+      s("skin-0305a5aaa4eb","FAMAS","Roll Cage","covert",42.87,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL3n5vh7h1c_M2oaalsM8-BD2uc2NF6ueZhW2exzUhz4WjWmNqpdy-UbwJxDJtxReEMtRGwloflP7m04wfXi94QyXj9kGoXuV3JhaXD")
+    ]
+  }
+,
   {"id":"case_kilowatt","name":"Кейс «Киловатт»","subtitle":"Ножи Кукри и AK-47 Inheritance","category":"base_cases","price":2.49,"accentColor":"#00F0FF","image":u("@JKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"),
     "items": [
       s("skin-8d6879f0a2bc","Dual Berettas","Hideout","milspec",0.89,"@IGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL0kp_0-B1f-vOiV6ZoMvWHGmaD_uJzpOloQxa0hxQpjDGMnYftb3-WbQ92WcZ4EeFZs0TtxIfvZr_m7wXW2I0TySv93ywd5yxu5-0FAPE7uvqA-FxXgtE"),
@@ -1588,6 +1775,7 @@ export function instantiateSkin(template: SkinTemplate, category: CaseContainer[
     rarity: template.rarity,
     image: template.image,
     floatValue,
+    patternSeed: Math.floor(Math.random() * 999) + 1,
     wear: isSticker ? 'FN' : wearInfo.wear,
     wearName: isSticker ? 'Турнирная наклейка CS2' : wearInfo.wearName,
     statTrak,
@@ -1596,6 +1784,11 @@ export function instantiateSkin(template: SkinTemplate, category: CaseContainer[
     stickers,
     price: Math.max(0.05, Number(finalPrice.toFixed(2))),
     obtainedAt: Date.now(),
+    isLocked: false,
+    marketTrend: {
+      trendPct: getSkinMarketTrend(template.id).trendPct,
+      isUp: getSkinMarketTrend(template.id).isUp,
+    },
   };
 }
 
@@ -1607,4 +1800,141 @@ export function getAllTemplates(): SkinTemplate[] {
     }
   }
   return Array.from(map.values()).sort((a, b) => a.basePrice - b.basePrice);
+}
+
+
+// ==================== CS2 RANKS & PREMIER RATING ====================
+export const CS2_RANKS: CS2RankInfo[] = [
+  { id: 1, name: 'Silver I', nameRu: 'Серебро I', tier: 'silver', icon: 'shield-outline', minElo: 0 },
+  { id: 2, name: 'Silver II', nameRu: 'Серебро II', tier: 'silver', icon: 'shield-outline', minElo: 600 },
+  { id: 3, name: 'Silver III', nameRu: 'Серебро III', tier: 'silver', icon: 'shield-outline', minElo: 1400 },
+  { id: 4, name: 'Silver IV', nameRu: 'Серебро IV', tier: 'silver', icon: 'shield-outline', minElo: 2400 },
+  { id: 5, name: 'Silver Elite', nameRu: 'Серебро-Элита', tier: 'silver', icon: 'shield-half-outline', minElo: 3600 },
+  { id: 6, name: 'Silver Elite Master', nameRu: 'Серебро — Великий Магистр', tier: 'silver', icon: 'shield', minElo: 5000 },
+  { id: 7, name: 'Gold Nova I', nameRu: 'Золотая Звезда — I', tier: 'nova', icon: 'star-outline', minElo: 6600 },
+  { id: 8, name: 'Gold Nova II', nameRu: 'Золотая Звезда — II', tier: 'nova', icon: 'star-half-outline', minElo: 8400 },
+  { id: 9, name: 'Gold Nova III', nameRu: 'Золотая Звезда — III', tier: 'nova', icon: 'star', minElo: 10400 },
+  { id: 10, name: 'Gold Nova Master', nameRu: 'Золотая Звезда — Магистр', tier: 'nova', icon: 'ribbon-outline', minElo: 12800 },
+  { id: 11, name: 'Master Guardian I', nameRu: 'Магистр-хранитель — I', tier: 'guardian', icon: 'trophy-outline', minElo: 15500 },
+  { id: 12, name: 'Master Guardian II', nameRu: 'Магистр-хранитель — II', tier: 'guardian', icon: 'trophy-outline', minElo: 18500 },
+  { id: 13, name: 'Master Guardian Elite', nameRu: 'Магистр-хранитель — Элита', tier: 'guardian', icon: 'trophy', minElo: 22000 },
+  { id: 14, name: 'Distinguished Master Guardian', nameRu: 'Заслуженный Магистр (Бигстар)', tier: 'guardian', icon: 'medal-outline', minElo: 26000 },
+  { id: 15, name: 'Legendary Eagle', nameRu: 'Легендарный Беркут', tier: 'elite', icon: 'flash-outline', minElo: 30500 },
+  { id: 16, name: 'Legendary Eagle Master', nameRu: 'Беркут-Магистр (LEM)', tier: 'elite', icon: 'flash', minElo: 35500 },
+  { id: 17, name: 'Supreme Master First Class', nameRu: 'Великий Магистр (Суприм)', tier: 'elite', icon: 'sparkles', minElo: 41000 },
+  { id: 18, name: 'The Global Elite', nameRu: 'Всемирная Элита (Global Elite)', tier: 'elite', icon: 'planet', minElo: 48000 },
+];
+
+export function getCS2Rank(elo: number): CS2RankInfo {
+  let cur = CS2_RANKS[0];
+  for (const r of CS2_RANKS) {
+    if (elo >= r.minElo) cur = r;
+    else break;
+  }
+  return cur;
+}
+
+export function getNextCS2Rank(elo: number): { nextRank: CS2RankInfo | null; progress: number; needed: number } {
+  const current = getCS2Rank(elo);
+  const nextIdx = CS2_RANKS.findIndex((r) => r.id === current.id) + 1;
+  if (nextIdx >= CS2_RANKS.length) {
+    return { nextRank: null, progress: 1, needed: 0 };
+  }
+  const next = CS2_RANKS[nextIdx];
+  const step = next.minElo - current.minElo;
+  const currentInStep = elo - current.minElo;
+  return {
+    nextRank: next,
+    progress: Math.min(1, Math.max(0, currentInStep / step)),
+    needed: next.minElo - elo,
+  };
+}
+
+export function getPremierRating(elo: number): PremierRatingInfo {
+  // Premier CS Rating CS2 style
+  const rating = Math.max(1000, Math.floor(elo * 0.72));
+  if (rating < 5000) return { rating, color: '#9CA3AF', tierName: 'Серый' };
+  if (rating < 10000) return { rating, color: '#38BDF8', tierName: 'Голубой' };
+  if (rating < 15000) return { rating, color: '#3B82F6', tierName: 'Синий' };
+  if (rating < 20000) return { rating, color: '#A855F7', tierName: 'Фиолетовый' };
+  if (rating < 25000) return { rating, color: '#EC4899', tierName: 'Розовый' };
+  if (rating < 30000) return { rating, color: '#EF4444', tierName: 'Красный' };
+  return { rating, color: '#FACC15', tierName: 'Золотой' };
+}
+
+export const CS2_AVATARS = [
+  { id: 's1mple', name: 's1mple', tag: 'NAVI GOAT', color: '#EAB308', icon: 'person' },
+  { id: 'm0nesy', name: 'm0NESY', tag: 'G2 Flash', color: '#EF4444', icon: 'flash' },
+  { id: 'donk', name: 'donk', tag: 'Team Spirit', color: '#10B981', icon: 'flame' },
+  { id: 'zywoo', name: 'ZywOo', tag: 'Team Vitality', color: '#F59E0B', icon: 'trophy' },
+  { id: 'b1t', name: 'b1t', tag: 'Headshot King', color: '#3B82F6', icon: 'star' },
+  { id: 'niko', name: 'NiKo', tag: 'Deagle Master', color: '#8B5CF6', icon: 'shield' },
+  { id: 'sas', name: 'SAS Спецназ', tag: 'Counter-Terrorist', color: '#0284C7', icon: 'finger-print' },
+  { id: 'phoenix', name: 'Phoenix Connexion', tag: 'Terrorist', color: '#DC2626', icon: 'skull' },
+];
+
+export const DAILY_CARE_PACKAGE: DailyCareReward[] = [
+  { day: 1, type: 'coins', amount: 15, label: '+$15 Монет', icon: 'cash-outline' },
+  { day: 2, type: 'case', caseId: 'case_revolution', label: 'Кейс «Революция»', icon: 'cube-outline' },
+  { day: 3, type: 'capsule', caseId: 'capsule_copenhagen_legends', label: 'Капсула наклеек Major', icon: 'disc-outline' },
+  { day: 4, type: 'coins', amount: 50, label: '+$50 Монет', icon: 'wallet-outline' },
+  { day: 5, type: 'case', caseId: 'case_dreams_nightmares', label: 'Кейс «Грёзы и кошмары»', icon: 'cube-outline' },
+  { day: 6, type: 'coins', amount: 100, label: '+$100 Монет', icon: 'card-outline' },
+  { day: 7, type: 'knife', label: '★ Случайный Редкий Нож', icon: 'sparkles' },
+];
+
+export function getSkinMarketTrend(templateId: string): MarketTrendInfo {
+  const today = new Date().toISOString().slice(0, 10);
+  let hash = 0;
+  const str = templateId + '_' + today;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const normalized = (Math.abs(hash % 200) / 10) - 10;
+  const trendPct = Number(normalized.toFixed(1));
+  const isUp = trendPct >= 0;
+  const volume24h = (Math.abs(hash) % 450) + 20;
+
+  let status: MarketTrendInfo['status'] = 'stable';
+  let statusText = 'Стабильный спрос';
+  if (trendPct > 6) {
+    status = 'surging';
+    statusText = '🔥 Всплеск спроса';
+  } else if (trendPct > 0) {
+    status = 'rising';
+    statusText = '🟢 Рост цены';
+  } else if (trendPct < -5) {
+    status = 'crashing';
+    statusText = '📉 Выгодная скидка';
+  } else if (trendPct < 0) {
+    status = 'dipping';
+    statusText = '🔴 Коррекция';
+  }
+
+  return { trendPct, isUp, volume24h, status, statusText };
+}
+
+export function rollRandomKnife(): InventoryItem {
+  const all = getAllTemplates();
+  const knives = all.filter(
+    (t) =>
+      t.rarity === 'gold' &&
+      (t.weapon.includes('Knife') ||
+        t.weapon.includes('Bayonet') ||
+        t.weapon.includes('Karambit') ||
+        t.weapon.includes('Dagger') ||
+        t.weapon.includes('Kerambit'))
+  );
+  const chosen = knives.length > 0 ? knives[Math.floor(Math.random() * knives.length)] : all[0];
+  return instantiateSkin(chosen);
+}
+
+// Compute dynamic minPrice and maxPrice for cases that don't have them
+for (const c of INITIAL_CASES) {
+  if (!c.minPrice && c.items.length > 0) {
+    const prices = c.items.map((i) => i.basePrice);
+    c.minPrice = Math.max(0.05, Number((Math.min(...prices) * 0.68).toFixed(2)));
+    c.maxPrice = Number((Math.max(...prices) * 1.45 * 1.75).toFixed(2));
+  }
 }

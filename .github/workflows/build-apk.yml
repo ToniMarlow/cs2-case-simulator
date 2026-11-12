@@ -51,7 +51,7 @@ jobs:
           $ZIPALIGN -v -p 4 "$RAW_APK" aligned.apk
           $APKSIGNER sign --ks cs2-release.keystore --ks-pass pass:cs2simulator --key-pass pass:cs2simulator --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out CS2-Case-Simulator.apk aligned.apk
           $APKSIGNER verify -v CS2-Case-Simulator.apk
-          cp CS2-Case-Simulator.apk CS2-Case-Simulator-v2.0.apk
+          cp CS2-Case-Simulator.apk CS2-Case-Simulator-v2.1.apk
 
       - name: Upload Ready APK Artifact
         uses: actions/upload-artifact@v4
@@ -59,12 +59,12 @@ jobs:
           name: CS2-Case-Simulator-APK
           path: ./CS2-Case-Simulator.apk
 
-      - name: Publish Signed APK to GitHub Releases (v2.0.0)
+      - name: Publish Signed APK to GitHub Releases (v2.1.0)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v2.0.0 --yes || true
-          gh release create v2.0.0 ./CS2-Case-Simulator.apk ./CS2-Case-Simulator-v2.0.apk \
-            --title "CS2 Case Simulator v2.0 (Global Update)" \
-            --notes "Глобальное обновление v2.0: Яркая светлая тема и Настройки, Битва Кейсов с ботами (Клатч, Терминал, Реверс, Общий), 60 кейсов и капсул, 1145 скинов, Быстрое открытие без пропуска, Защита аккаунта по коду и паролю, Цех сборки при банкротстве."
-          gh release upload v1.0.2 ./CS2-Case-Simulator.apk --clobber || true
+          gh release delete v2.1.0 --yes || true
+          gh release create v2.1.0 ./CS2-Case-Simulator.apk ./CS2-Case-Simulator-v2.1.apk \
+            --title "CS2 Case Simulator v2.1 (Case Battle 50, Stickers, Market Trends & Sounds)" \
+            --notes "Обновление v2.1: Битва кейсов увеличена до 50 кейсов с мульти-выбором, Наклейки со слотами и износом, Суточные тренды рынка Steam 24h, Аутентичные звуки рулетки, лок-ина и золотого дропа."
+          gh release upload v2.0.0 ./CS2-Case-Simulator.apk --clobber || true

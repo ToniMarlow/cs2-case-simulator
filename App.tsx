@@ -25,16 +25,27 @@ import {
   ThemeMode,
   UserProfile,
 } from './src/types/cs2';
-import { INITIAL_CASES, INITIAL_QUESTS, instantiateSkin } from './src/data/cs2Database';
+import {
+  CS2_AVATARS,
+  CS2_RANKS,
+  DAILY_CARE_PACKAGE,
+  getCS2Rank,
+  getNextCS2Rank,
+  getPremierRating,
+  INITIAL_CASES,
+  INITIAL_QUESTS,
+  instantiateSkin,
+  rollRandomKnife,
+} from './src/data/cs2Database';
 import {
   GameNotificationBanner,
   InGameNotification,
+  InspectSkinModal,
   LiquidGlassCard,
   SkinCard,
   THEMES,
 } from './src/components/LiquidGlassUI';
 import { CS2CaseScreen } from './src/components/CaseRouletteModal';
-import { SkinInspectorModal } from './src/components/SkinInspectorModal';
 import { MiniGamesHub, MiniGameTab } from './src/components/MiniGamesHub';
 import {
   ACCOUNTS_REGISTRY_KEY,
@@ -48,7 +59,14 @@ import {
   getRankByElo,
   LeaderboardSection,
 } from './src/components/RankAndRewardsModal';
-import { playClickSound, playWinSound, setSoundEnabled } from './src/utils/soundManager';
+import {
+  playClickSound,
+  playDropSound,
+  playStickerApplySound,
+  playStickerScrapeSound,
+  playWinSound,
+  setSoundEnabled,
+} from './src/utils/soundManager';
 
 const STORAGE_KEY = '@cs2_liquid_glass_save_v3';
 
@@ -77,7 +95,8 @@ export default function App() {
   // Navigation & Filters
   const [activeTab, setActiveTab] = useState<BottomNavTab>('cases');
   const [requestedMiniGame, setRequestedMiniGame] = useState<MiniGameTab>('lobby');
-  const [catalogCategory, setCatalogCategory] = useState<CatalogCategory>('base_cases');
+  const [catalogCategory, setCatalogCategory] = useState<CatalogCategory | 'all'>('all');
+  const [selectedAvatarId, setSelectedAvatarId] = useState<string>('s1mple');
   const [caseSearchQuery, setCaseSearchQuery] = useState<string>('');
   const [casePriceSort, setCasePriceSort] = useState<'default' | 'asc' | 'desc'>('default');
 
@@ -250,27 +269,121 @@ export default function App() {
     playWinSound();
   };
 
+  const handleToggleLockItem = (instanceId: string) => {
+    playClickSound();
+    setInventory((prev) =>
+      prev.map((item) => {
+        if (item.instanceId === instanceId) {
+          const nextLock = !item.isLocked;
+          showNotify(
+            nextLock ? 'Скин заблокирован 🔒' : 'Замок снят 🔓',
+            nextLock
+              ? `${item.weapon} | ${item.name} защищён от быстрой продажи и контрактов.`
+              : `${item.weapon} | ${item.name} теперь можно продать или отправить в контракт.`,
+            'info'
+          );
+          return { ...item, isLocked: nextLock };
+        }
+        return item;
+      })
+    );
+    if (inspectedSkin && inspectedSkin.instanceId === instanceId) {
+      setInspectedSkin((prev) => (prev ? { ...prev, isLocked: !prev.isLocked } : null));
+    }
+  };
+
   const handleSellItem = (item: InventoryItem) => {
+    if (item.isLocked) {
+      showNotify('Скин защищён замком 🔒', 'Снимите замок перед продажей.', 'warning');
+      return;
+    }
     setInventory((prev) => prev.filter((i) => i.instanceId !== item.instanceId));
     setBalance((b) => Number((b + item.price).toFixed(2)));
     incrementQuest('sell_items', 1);
     playWinSound();
   };
 
-  const handleApplySticker = (itemId: string, sticker: { name: string; image: string }) => {
+  const handleApplyStickerToWeapon = (instanceId: string, sticker: InventoryItem, slot: number) => {
+    playStickerApplySound();
+    setInventory((prev) => {
+      let removedOne = false;
+      const filtered = prev.filter((it) => {
+        if (!removedOne && it.instanceId === sticker.instanceId) {
+          removedOne = true;
+          return false;
+        }
+        return true;
+      });
+
+      return filtered.map((it) => {
+        if (it.instanceId === instanceId) {
+          const nextStickers = [...(it.stickers || [])];
+          nextStickers[slot] = { name: sticker.name, image: sticker.image, wear: 0 };
+          const bonusPrice = Number((sticker.price * 0.25).toFixed(2));
+          const updated = {
+            ...it,
+            stickers: nextStickers.filter(Boolean),
+            price: Number((it.price + bonusPrice).toFixed(2)),
+          };
+          if (inspectedSkin && inspectedSkin.instanceId === instanceId) {
+            setInspectedSkin(updated);
+          }
+          return updated;
+        }
+        return it;
+      });
+    });
+    showNotify(
+      'Наклейка нанесена! 🏷',
+      `Наклейка ${sticker.name} нанесена на оружие! Стоимость увеличена.`,
+      'success'
+    );
+  };
+
+  const handleScrapeStickerFromWeapon = (instanceId: string, slot: number) => {
+    playStickerScrapeSound();
     setInventory((prev) =>
       prev.map((it) => {
-        if (it.instanceId !== itemId) return it;
-        const nextStickers = [...(it.stickers || []), sticker].slice(0, 4);
-        const updated = {
-          ...it,
-          stickers: nextStickers,
-          price: Number((it.price + 1.5).toFixed(2)),
-        };
-        setInspectedSkin(updated);
-        return updated;
+        if (it.instanceId === instanceId) {
+          const nextStickers = [...(it.stickers || [])];
+          if (nextStickers[slot]) {
+            const curWear = nextStickers[slot].wear || 0;
+            if (curWear >= 2) {
+              nextStickers.splice(slot, 1);
+              showNotify('Наклейка стёрта', 'Наклейка была полностью удалена с оружия.', 'info');
+            } else {
+              nextStickers[slot] = { ...nextStickers[slot], wear: curWear + 1 };
+              showNotify('Наклейка потёрта', `Степень износа наклейки увеличена (${curWear + 1}/3).`, 'info');
+            }
+          }
+          const updated = { ...it, stickers: nextStickers };
+          if (inspectedSkin && inspectedSkin.instanceId === instanceId) {
+            setInspectedSkin(updated);
+          }
+          return updated;
+        }
+        return it;
       })
     );
+  };
+
+  const handleRemoveStickerFromWeapon = (instanceId: string, slot: number) => {
+    playStickerScrapeSound();
+    setInventory((prev) =>
+      prev.map((it) => {
+        if (it.instanceId === instanceId) {
+          const nextStickers = [...(it.stickers || [])];
+          nextStickers.splice(slot, 1);
+          const updated = { ...it, stickers: nextStickers };
+          if (inspectedSkin && inspectedSkin.instanceId === instanceId) {
+            setInspectedSkin(updated);
+          }
+          return updated;
+        }
+        return it;
+      })
+    );
+    showNotify('Наклейка снята', 'Наклейка снята со слота.', 'info');
   };
 
   const handlePreviewTemplate = (skin: SkinTemplate, category: CatalogCategory) => {
@@ -279,9 +392,15 @@ export default function App() {
   };
 
   const handleSellAllCheap = () => {
-    const cheap = inventory.filter((i) => i.rarity === 'milspec' || i.rarity === 'restricted');
+    const cheap = inventory.filter(
+      (i) => !i.isLocked && (i.rarity === 'milspec' || i.rarity === 'restricted')
+    );
     if (cheap.length === 0) {
-      showNotify('Нет синих и фиолетовых скинов', 'На складе нет недорогих скинов.', 'warning');
+      showNotify(
+        'Нет доступных скинов для продажи',
+        'Недорогие скины отсутствуют или защищены замком 🔒.',
+        'warning'
+      );
       return;
     }
     const totalSum = cheap.reduce((acc, i) => acc + i.price, 0);
@@ -294,14 +413,26 @@ export default function App() {
   };
 
   const handleSellEntireInventory = () => {
-    if (inventory.length === 0) return;
-    const totalSum = inventory.reduce((acc, i) => acc + i.price, 0);
-    const count = inventory.length;
-    setInventory([]);
+    const toSell = inventory.filter((i) => !i.isLocked);
+    const lockedCount = inventory.length - toSell.length;
+    if (toSell.length === 0) {
+      if (lockedCount > 0) {
+        showNotify('Все скины защищены замком 🔒', `У вас ${lockedCount} предметов под замком.`, 'warning');
+      } else {
+        showNotify('Инвентарь пуст', 'Нет предметов для продажи.', 'info');
+      }
+      return;
+    }
+    const totalSum = toSell.reduce((acc, i) => acc + i.price, 0);
+    setInventory((prev) => prev.filter((i) => i.isLocked));
     setBalance((b) => Number((b + totalSum).toFixed(2)));
-    incrementQuest('sell_items', count);
+    incrementQuest('sell_items', toSell.length);
     playWinSound();
-    showNotify('Склад продан', `Получено +$${totalSum.toFixed(2)}`, 'success');
+    showNotify(
+      'Склад продан',
+      `Продано ${toSell.length} предм. на сумму $${totalSum.toFixed(2)}${lockedCount > 0 ? ` (${lockedCount} под замком 🔒 сохранены)` : ''}`,
+      'success'
+    );
   };
 
   const handleClaimQuest = (quest: QuestItem) => {
@@ -322,12 +453,13 @@ export default function App() {
 
   // Filter & Sort Cases
   const filteredCases = INITIAL_CASES.filter((c) => {
-    if (c.category !== catalogCategory) return false;
+    if (catalogCategory !== 'all' && c.category !== catalogCategory) return false;
     if (caseSearchQuery.trim() !== '') {
       const q = caseSearchQuery.trim().toLowerCase();
       return (
         c.name.toLowerCase().includes(q) ||
-        c.subtitle.toLowerCase().includes(q)
+        c.subtitle.toLowerCase().includes(q) ||
+        c.items.some((i) => i.weapon.toLowerCase().includes(q) || i.name.toLowerCase().includes(q))
       );
     }
     return true;
@@ -350,6 +482,10 @@ export default function App() {
     questFilter === 'all' ? quests : quests.filter((q) => q.difficulty === questFilter);
   const totalInventoryValue = inventory.reduce((acc, i) => acc + i.price, 0);
   const rankData = getRankByElo(eloRating);
+  const cs2Rank = getCS2Rank(eloRating);
+  const nextRankData = getNextCS2Rank(eloRating);
+  const premierRating = getPremierRating(eloRating);
+  const currentAvatar = CS2_AVATARS.find((a) => a.id === selectedAvatarId) || CS2_AVATARS[0];
   const bestPlayerSkin = [...inventory].sort((a, b) => b.price - a.price)[0];
   const isBankrupt = balance < 0.9 && inventory.length === 0;
 
@@ -434,13 +570,22 @@ export default function App() {
                   setActiveTab('profile');
                 }}
               >
-                <Image source={require('./assets/icon.png')} style={styles.avatarMini} />
+                <View style={[styles.avatarBox, { backgroundColor: currentAvatar.color }]}>
+                  <Ionicons name={currentAvatar.icon as any} size={15} color="#FFFFFF" />
+                </View>
                 <View>
-                  <Text style={[styles.brandName, { color: theme.textPrimary }]}>
-                    {user.nickname}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.brandName, { color: theme.textPrimary }]}>
+                      {user.nickname}
+                    </Text>
+                    <View style={[styles.premierHeaderBadge, { backgroundColor: premierRating.color }]}>
+                      <Text style={styles.premierHeaderBadgeText}>
+                        {premierRating.rating.toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={[styles.rankTextMini, { color: theme.textSecondary }]}>
-                    {eloRating.toLocaleString()} ELO • {rankData.current.title}
+                    {cs2Rank.nameRu} ({cs2Rank.name})
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -530,8 +675,9 @@ export default function App() {
                         style={styles.catalogTabsRow}
                       >
                         {[
-                          { key: 'base_cases', title: 'Кейсы CS2' },
-                          { key: 'black_market', title: 'Коллекции' },
+                          { key: 'all', title: 'Все кейсы' },
+                          { key: 'base_cases', title: 'Официальные CS2' },
+                          { key: 'black_market', title: 'Чёрный Рынок 🔥' },
                           { key: 'capsules', title: 'Капсулы' },
                           { key: 'souvenir', title: 'Сувенирные' },
                         ].map((cat) => {
@@ -539,7 +685,7 @@ export default function App() {
                           return (
                             <TouchableOpacity
                               key={cat.key}
-                              onPress={() => setCatalogCategory(cat.key as CatalogCategory)}
+                              onPress={() => setCatalogCategory(cat.key as CatalogCategory | 'all')}
                               style={[
                                 styles.catChip,
                                 {
@@ -635,6 +781,17 @@ export default function App() {
                               </Text>
                             </View>
 
+                            {caseObj.badgeTag && (
+                              <View
+                                style={[
+                                  styles.caseBadgeTag,
+                                  { backgroundColor: caseObj.accentColor || '#16A34A' },
+                                ]}
+                              >
+                                <Text style={styles.caseBadgeTagText}>{caseObj.badgeTag}</Text>
+                              </View>
+                            )}
+
                             <View style={styles.caseImgWrap}>
                               <Image
                                 source={{ uri: caseObj.image }}
@@ -655,6 +812,12 @@ export default function App() {
                             >
                               {caseObj.subtitle}
                             </Text>
+
+                            <View style={[styles.caseDropRangeBox, { backgroundColor: theme.surfaceBg }]}>
+                              <Text style={[styles.caseDropRangeText, { color: theme.textSecondary }]}>
+                                Дроп: ${(caseObj.minPrice || 0.1).toFixed(2)} - ${(caseObj.maxPrice || 100).toFixed(0)}
+                              </Text>
+                            </View>
                           </TouchableOpacity>
                         ))}
                       </View>
@@ -916,14 +1079,90 @@ export default function App() {
                   {/* ==================== TAB 5: PROFILE ==================== */}
                   {activeTab === 'profile' && (
                     <View>
+                      {/* CS2 Rank & Premier Rating Card */}
                       <LiquidGlassCard themeMode={themeMode} style={styles.profileCard}>
-                        <Text style={[styles.profileNick, { color: theme.textPrimary }]}>
-                          {user.nickname}
-                        </Text>
-                        <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>
-                          {user.email}
-                        </Text>
+                        <View style={styles.profileTopRow}>
+                          <View style={[styles.avatarBoxLarge, { backgroundColor: currentAvatar.color }]}>
+                            <Ionicons name={currentAvatar.icon as any} size={28} color="#FFFFFF" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={[styles.profileNick, { color: theme.textPrimary }]}>
+                                {user.nickname}
+                              </Text>
+                              <View style={[styles.premierHeaderBadge, { backgroundColor: premierRating.color }]}>
+                                <Text style={styles.premierHeaderBadgeText}>
+                                  {premierRating.rating.toLocaleString()}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>
+                              {user.email}
+                            </Text>
+                          </View>
+                        </View>
 
+                        {/* CS2 Rank Badge & Progress */}
+                        <View style={[styles.cs2RankShowcase, { backgroundColor: theme.surfaceBg }]}>
+                          <View style={styles.cs2RankTitleRow}>
+                            <Ionicons name={cs2Rank.icon as any} size={20} color={premierRating.color} />
+                            <Text style={[styles.cs2RankTitleText, { color: theme.textPrimary }]}>
+                              {cs2Rank.nameRu} ({cs2Rank.name})
+                            </Text>
+                          </View>
+
+                          <View style={styles.rankProgressBarBg}>
+                            <View
+                              style={[
+                                styles.rankProgressBarFill,
+                                {
+                                  width: `${Math.round(nextRankData.progress * 100)}%`,
+                                  backgroundColor: premierRating.color,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <Text style={[styles.rankProgressHint, { color: theme.textMuted }]}>
+                            {nextRankData.nextRank
+                              ? `Прогресс ${Math.round(nextRankData.progress * 100)}% • До ${nextRankData.nextRank.nameRu}: ${nextRankData.needed} ELO`
+                              : 'Максимальное звание CS2 достигнуто!'}
+                          </Text>
+                        </View>
+
+                        {/* Avatar Picker */}
+                        <View style={styles.avatarPickerSection}>
+                          <Text style={[styles.avatarPickerTitle, { color: theme.textSecondary }]}>
+                            Выберите аватар CS2:
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.avatarScroll}>
+                            {CS2_AVATARS.map((av) => {
+                              const active = selectedAvatarId === av.id;
+                              return (
+                                <TouchableOpacity
+                                  key={av.id}
+                                  onPress={() => {
+                                    playClickSound();
+                                    setSelectedAvatarId(av.id);
+                                  }}
+                                  style={[
+                                    styles.avatarPickerItem,
+                                    { backgroundColor: theme.surfaceBg },
+                                    active && { borderColor: av.color, borderWidth: 2 },
+                                  ]}
+                                >
+                                  <View style={[styles.avatarPickerIcon, { backgroundColor: av.color }]}>
+                                    <Ionicons name={av.icon as any} size={15} color="#FFFFFF" />
+                                  </View>
+                                  <Text style={[styles.avatarPickerName, { color: theme.textPrimary }]}>
+                                    {av.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+
+                        {/* Stats Grid */}
                         <View style={styles.statsGrid}>
                           <View style={[styles.statBox, { backgroundColor: theme.surfaceBg }]}>
                             <Text style={[styles.statVal, { color: theme.textPrimary }]}>
@@ -949,7 +1188,32 @@ export default function App() {
                               Стоимость
                             </Text>
                           </View>
+                          <View style={[styles.statBox, { backgroundColor: theme.surfaceBg }]}>
+                            <Text style={[styles.statVal, { color: '#EAB308' }]}>
+                              {inventory.filter((i) => i.isLocked).length}
+                            </Text>
+                            <Text style={[styles.statLbl, { color: theme.textSecondary }]}>
+                              Под замком 🔒
+                            </Text>
+                          </View>
                         </View>
+
+                        {/* Daily Care Package Trigger */}
+                        <TouchableOpacity
+                          style={[styles.dailyCareBtn, { backgroundColor: theme.surfaceBg }]}
+                          onPress={() => setDailyModalOpen(true)}
+                        >
+                          <Ionicons name="gift" size={18} color="#EAB308" />
+                          <View style={{ flex: 1, marginLeft: 8 }}>
+                            <Text style={[styles.dailyCareTitle, { color: theme.textPrimary }]}>
+                              Календарь наград CS2
+                            </Text>
+                            <Text style={[styles.dailyCareSub, { color: theme.textSecondary }]}>
+                              Серия: День {streakDay} из 7 • В конце гарантированный Нож ★
+                            </Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                        </TouchableOpacity>
 
                         <TouchableOpacity
                           style={[styles.settingBtn, { backgroundColor: theme.surfaceBg }]}
@@ -1196,12 +1460,22 @@ export default function App() {
           </>
         )}
 
-        <SkinInspectorModal
+        <InspectSkinModal
           visible={Boolean(inspectedSkin)}
           item={inspectedSkin}
+          themeMode={themeMode}
+          availableStickers={inventory.filter((i) => i.isSticker)}
           onClose={() => setInspectedSkin(null)}
+          onToggleLock={handleToggleLockItem}
           onSell={handleSellItem}
-          onApplySticker={handleApplySticker}
+          onContract={(item) => {
+            setInspectedSkin(null);
+            setRequestedMiniGame('tradeup');
+            setActiveTab('minigames');
+          }}
+          onApplySticker={handleApplyStickerToWeapon}
+          onScrapeSticker={handleScrapeStickerFromWeapon}
+          onRemoveSticker={handleRemoveStickerFromWeapon}
         />
 
         <DailyRewardModal
@@ -1623,6 +1897,140 @@ const styles = StyleSheet.create({
   navLabel: {
     fontSize: 10,
     fontWeight: '700',
+    marginTop: 2,
+  },
+  avatarBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  avatarBoxLarge: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  premierHeaderBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  premierHeaderBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  caseBadgeTag: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    zIndex: 2,
+  },
+  caseBadgeTagText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  caseDropRangeBox: {
+    marginTop: 6,
+    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  caseDropRangeText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  profileTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  cs2RankShowcase: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  cs2RankTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  cs2RankTitleText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  rankProgressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  rankProgressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  rankProgressHint: {
+    fontSize: 10,
+  },
+  avatarPickerSection: {
+    marginBottom: 14,
+  },
+  avatarPickerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  avatarScroll: {
+    flexDirection: 'row',
+  },
+  avatarPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  avatarPickerIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarPickerName: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dailyCareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  dailyCareTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  dailyCareSub: {
+    fontSize: 10,
     marginTop: 2,
   },
 });

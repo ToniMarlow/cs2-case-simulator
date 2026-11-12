@@ -22,6 +22,7 @@ export type MiniGameTab =
   | 'lobby'
   | 'casebattle'
   | 'crash'
+  | 'plinko'
   | 'upgrader'
   | 'mines'
   | 'tradeup'
@@ -74,6 +75,14 @@ const GAME_CARDS: GameLobbyCardInfo[] = [
     tag: '4 РЕЖИМА',
     icon: 'trophy-outline',
     previewImg: CS2_CASES[0]?.image || '',
+  },
+  {
+    id: 'plinko',
+    title: 'Плинко CS2 (Plinko)',
+    subtitle: 'Сбросьте шарик через пирамиду колышков в корзины с множителями',
+    tag: 'ДО x1000',
+    icon: 'triangle-outline',
+    previewImg: CS2_CASES[3]?.items[1]?.image || '',
   },
   {
     id: 'crash',
@@ -151,9 +160,7 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   const theme = THEMES[themeMode] || THEMES.obsidian;
 
   useEffect(() => {
-    if (initialGame && initialGame !== 'lobby') {
-      setActiveGame(initialGame);
-    }
+    setActiveGame(initialGame || 'lobby');
   }, [initialGame]);
 
   const notify = (
@@ -248,6 +255,101 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
   const rocketX = 24 + crashProgress * 290;
   const rocketY = 135 - Math.pow(crashProgress, 1.35) * 100;
   const curvePath = `M 24 135 Q ${24 + crashProgress * 160} 135 ${rocketX} ${rocketY}`;
+
+  // ==================== 1.5. PLINKO CS2 ====================
+  const [plinkoBet, setPlinkoBet] = useState('5');
+  const [plinkoRisk, setPlinkoRisk] = useState<'low' | 'medium' | 'high'>('medium');
+  const [plinkoRunning, setPlinkoRunning] = useState(false);
+  const [plinkoResultMult, setPlinkoResultMult] = useState<number | null>(null);
+  const [plinkoActiveBin, setPlinkoActiveBin] = useState<number | null>(null);
+  const plinkoBallX = useRef(new Animated.Value(145)).current;
+  const plinkoBallY = useRef(new Animated.Value(6)).current;
+
+  const PLINKO_MULTIPLIERS = {
+    low: [5.6, 2.1, 1.1, 1.0, 0.5, 1.0, 1.1, 2.1, 5.6],
+    medium: [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13],
+    high: [29, 4, 1.5, 0.3, 0.2, 0.3, 1.5, 4, 29],
+  };
+
+  const startPlinko = () => {
+    if (plinkoRunning) return;
+    const bet = Number(plinkoBet);
+    if (isNaN(bet) || bet <= 0 || bet > balance) {
+      notify('Недостаточно средств', `Проверьте ставку (ваш баланс $${balance.toFixed(2)}).`, 'error');
+      return;
+    }
+    onChangeBalance(-bet);
+    setPlinkoRunning(true);
+    setPlinkoResultMult(null);
+    setPlinkoActiveBin(null);
+
+    const path: number[] = [];
+    for (let r = 0; r < 8; r++) {
+      path.push(Math.random() < 0.5 ? -1 : 1);
+    }
+    const rightsCount = path.filter((p) => p === 1).length;
+    const finalBin = rightsCount;
+    const multipliers = PLINKO_MULTIPLIERS[plinkoRisk];
+    const finalMult = multipliers[finalBin];
+
+    plinkoBallX.setValue(145);
+    plinkoBallY.setValue(6);
+
+    let curX = 145;
+    const animations: Animated.CompositeAnimation[] = [];
+
+    for (let row = 0; row < 8; row++) {
+      const stepX = path[row] * (13 + Math.random() * 2);
+      curX += stepX;
+      const targetY = (row + 1) * 22;
+      animations.push(
+        Animated.parallel([
+          Animated.timing(plinkoBallX, {
+            toValue: curX,
+            duration: 90,
+            easing: Easing.linear,
+            useNativeDriver: false,
+          }),
+          Animated.timing(plinkoBallY, {
+            toValue: targetY,
+            duration: 90,
+            easing: Easing.linear,
+            useNativeDriver: false,
+          }),
+        ])
+      );
+    }
+
+    const binTargetX = 18 + finalBin * 32;
+    animations.push(
+      Animated.parallel([
+        Animated.timing(plinkoBallX, {
+          toValue: binTargetX,
+          duration: 90,
+          useNativeDriver: false,
+        }),
+        Animated.timing(plinkoBallY, {
+          toValue: 202,
+          duration: 90,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+
+    Animated.sequence(animations).start(() => {
+      setPlinkoRunning(false);
+      setPlinkoActiveBin(finalBin);
+      setPlinkoResultMult(finalMult);
+      const winAmount = Number((bet * finalMult).toFixed(2));
+      onChangeBalance(winAmount);
+      if (finalMult >= 1.0) {
+        onRecordGameWin(false);
+        playWinSound();
+      } else {
+        playLoseSound();
+      }
+    });
+  };
 
   // ==================== 2. UPGRADER ====================
   const [selectedUpgradeSkin, setSelectedUpgradeSkin] = useState<InventoryItem | null>(null);
@@ -618,52 +720,62 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
     .map((id) => inventory.find((i) => i.instanceId === id))
     .filter(Boolean) as InventoryItem[];
 
-  // ==================== CLEAN MINIMALIST LOBBY ====================
+  // ==================== CLEAN MINIMALIST LOBBY WITH WIDE GAME CARDS ====================
   if (activeGame === 'lobby') {
     return (
       <View style={styles.container}>
-        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-          Игровые режимы
-        </Text>
+        <View style={styles.lobbyHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginBottom: 0 }]}>
+            Игровые режимы CS2
+          </Text>
+          <View style={[styles.activeGamesCountPill, { backgroundColor: theme.surfaceBg }]}>
+            <Text style={[styles.activeGamesCountText, { color: theme.textSecondary }]}>
+              {GAME_CARDS.length} ИГР
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.lobbyGrid}>
           {GAME_CARDS.map((card) => (
             <TouchableOpacity
               key={card.id}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
               onPress={() => {
                 playClickSound();
                 setActiveGame(card.id);
               }}
               style={[
-                styles.lobbyCard,
+                styles.lobbyWideCard,
                 {
                   backgroundColor: theme.cardBg,
                   borderColor: theme.cardBorder,
                 },
               ]}
             >
-              <View style={styles.lobbyCardTop}>
-                <View style={[styles.tagPill, { backgroundColor: theme.surfaceBg }]}>
-                  <Text style={[styles.tagPillText, { color: theme.textSecondary }]}>
-                    {card.tag}
-                  </Text>
-                </View>
-                <Ionicons name={card.icon} size={17} color={theme.textSecondary} />
-              </View>
-
-              <View style={styles.lobbyImgWrap}>
+              <View style={[styles.lobbyImgBox, { backgroundColor: theme.surfaceBg }]}>
                 {card.previewImg ? (
                   <Image
                     source={{ uri: card.previewImg }}
-                    style={styles.lobbyImg}
+                    style={styles.lobbyWideImg}
                     resizeMode="contain"
                   />
                 ) : (
-                  <Ionicons name={card.icon} size={42} color={theme.textSecondary} />
+                  <Ionicons name={card.icon} size={36} color={theme.textSecondary} />
                 )}
+                <View style={styles.lobbyIconBadge}>
+                  <Ionicons name={card.icon} size={13} color="#FFFFFF" />
+                </View>
               </View>
 
-              <View>
+              <View style={styles.lobbyContentBox}>
+                <View style={styles.lobbyTagRow}>
+                  <View style={[styles.tagPill, { backgroundColor: theme.surfaceBg }]}>
+                    <Text style={[styles.tagPillText, { color: theme.textSecondary }]}>
+                      {card.tag}
+                    </Text>
+                  </View>
+                </View>
+
                 <Text style={[styles.lobbyCardTitle, { color: theme.textPrimary }]}>
                   {card.title}
                 </Text>
@@ -673,6 +785,13 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
                 >
                   {card.subtitle}
                 </Text>
+
+                <View style={styles.lobbyPlayBtnRow}>
+                  <View style={styles.lobbyPlayBtn}>
+                    <Text style={styles.lobbyPlayBtnText}>ИГРАТЬ</Text>
+                    <Ionicons name="play" size={11} color="#FFFFFF" />
+                  </View>
+                </View>
               </View>
             </TouchableOpacity>
           ))}
@@ -860,6 +979,151 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
               </Text>
             </TouchableOpacity>
           )}
+        </View>
+      )}
+
+      {/* ==================== 1.5. PLINKO CS2 ==================== */}
+      {activeGame === 'plinko' && (
+        <View
+          style={[
+            styles.gamePanel,
+            { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+          ]}
+        >
+          {/* Risk Level Selector */}
+          <View style={styles.plinkoRiskRow}>
+            {(['low', 'medium', 'high'] as const).map((r) => {
+              const active = plinkoRisk === r;
+              const labels = { low: 'Низкий', medium: 'Средний', high: 'Высокий' };
+              const colors = { low: '#22C55E', medium: '#EAB308', high: '#EF4444' };
+              return (
+                <TouchableOpacity
+                  key={r}
+                  disabled={plinkoRunning}
+                  onPress={() => {
+                    playClickSound();
+                    setPlinkoRisk(r);
+                  }}
+                  style={[
+                    styles.plinkoRiskBtn,
+                    {
+                      backgroundColor: active ? colors[r] : theme.surfaceBg,
+                      borderColor: active ? colors[r] : theme.cardBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.plinkoRiskText,
+                      { color: active ? '#FFFFFF' : theme.textSecondary },
+                    ]}
+                  >
+                    {labels[r]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Plinko Pyramid Stage */}
+          <View style={[styles.plinkoStage, { backgroundColor: theme.surfaceBg }]}>
+            {/* Rows of Pegs */}
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((rowIdx) => {
+              const pegCount = rowIdx + 3;
+              return (
+                <View key={rowIdx} style={styles.plinkoPegRow}>
+                  {Array.from({ length: pegCount }).map((_, pIdx) => (
+                    <View key={pIdx} style={styles.plinkoPeg} />
+                  ))}
+                </View>
+              );
+            })}
+
+            {/* Falling Ball */}
+            {plinkoRunning && (
+              <Animated.View
+                style={[
+                  styles.plinkoBall,
+                  {
+                    left: plinkoBallX,
+                    top: plinkoBallY,
+                  },
+                ]}
+              />
+            )}
+
+            {/* Multipliers Bins Row */}
+            <View style={styles.plinkoBinsRow}>
+              {PLINKO_MULTIPLIERS[plinkoRisk].map((m, idx) => {
+                const isActive = plinkoActiveBin === idx;
+                const isEdge = idx === 0 || idx === 8;
+                const isNearEdge = idx === 1 || idx === 7;
+                const binBg = isEdge
+                  ? '#EF4444'
+                  : isNearEdge
+                  ? '#F97316'
+                  : m >= 1
+                  ? '#EAB308'
+                  : '#6B7280';
+
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.plinkoBin,
+                      { backgroundColor: binBg },
+                      isActive && styles.plinkoBinActive,
+                    ]}
+                  >
+                    <Text style={styles.plinkoBinText}>{m}x</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Result Alert */}
+          {plinkoResultMult !== null && (
+            <View
+              style={[
+                styles.plinkoResultBanner,
+                {
+                  backgroundColor:
+                    plinkoResultMult >= 1 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  borderColor: plinkoResultMult >= 1 ? '#22C55E' : '#EF4444',
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.plinkoResultText,
+                  { color: plinkoResultMult >= 1 ? '#22C55E' : '#EF4444' },
+                ]}
+              >
+                {plinkoResultMult >= 1
+                  ? `Выигрыш: +$${(Number(plinkoBet) * plinkoResultMult).toFixed(2)} (${plinkoResultMult}x)!`
+                  : `Дроп: $${(Number(plinkoBet) * plinkoResultMult).toFixed(2)} (${plinkoResultMult}x)`}
+              </Text>
+            </View>
+          )}
+
+          {/* Quick Bet Controls */}
+          {renderQuickBetBar(plinkoBet, setPlinkoBet, plinkoRunning)}
+
+          {/* Drop Ball Action Button */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            disabled={plinkoRunning || balance < Number(plinkoBet)}
+            onPress={startPlinko}
+            style={[
+              styles.greenActionBtn,
+              { backgroundColor: plinkoRunning ? '#6B7280' : '#16A34A' },
+            ]}
+          >
+            <Text style={styles.greenActionText}>
+              {plinkoRunning ? 'ШАРИК ПАДАЕТ...' : `СБРОСИТЬ ШАРИК ($${plinkoBet})`}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1437,6 +1701,165 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+  },
+  lobbyHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  activeGamesCountPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  activeGamesCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  lobbyWideCard: {
+    width: '100%',
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
+    alignItems: 'center',
+    gap: 12,
+  },
+  lobbyImgBox: {
+    width: 90,
+    height: 90,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  lobbyWideImg: {
+    width: 80,
+    height: 60,
+  },
+  lobbyIconBadge: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#16A34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lobbyContentBox: {
+    flex: 1,
+  },
+  lobbyTagRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  lobbyPlayBtnRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+  },
+  lobbyPlayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 7,
+  },
+  lobbyPlayBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  plinkoRiskRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  plinkoRiskBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  plinkoRiskText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  plinkoStage: {
+    height: 235,
+    borderRadius: 12,
+    paddingTop: 12,
+    position: 'relative',
+    overflow: 'hidden',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  plinkoPegRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    height: 18,
+    alignItems: 'center',
+  },
+  plinkoPeg: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  plinkoBall: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#EAB308',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    zIndex: 10,
+  },
+  plinkoBinsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingBottom: 6,
+    gap: 3,
+  },
+  plinkoBin: {
+    flex: 1,
+    height: 24,
+    borderRadius: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  plinkoBinActive: {
+    transform: [{ scale: 1.15 }],
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  plinkoBinText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  plinkoResultBanner: {
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  plinkoResultText: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   lobbyCard: {
     width: '48.4%',

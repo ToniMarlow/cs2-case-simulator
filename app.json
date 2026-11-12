@@ -2,7 +2,7 @@
   "expo": {
     "name": "CS2 Case Simulator",
     "slug": "cs2-case-simulator",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",

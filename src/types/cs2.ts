@@ -76,6 +76,15 @@ export interface CaseContainer {
   accentColor: string;
   customChances?: Partial<Record<RarityKey, number>>;
   items: SkinTemplate[];
+  minPrice?: number;
+  maxPrice?: number;
+  badgeTag?: string;
+}
+
+export interface AppliedSticker {
+  name: string;
+  image: string;
+  wear?: number;
 }
 
 export interface InventoryItem {
@@ -86,14 +95,52 @@ export interface InventoryItem {
   rarity: RarityKey;
   image: string;
   floatValue: number;
+  patternSeed?: number;
   wear: WearShort;
   wearName: string;
   statTrak: boolean;
   souvenir: boolean;
   isSticker: boolean;
-  stickers: { name: string; image: string }[];
+  stickers: AppliedSticker[];
   price: number;
   obtainedAt: number;
+  isLocked?: boolean;
+  marketTrend?: {
+    trendPct: number;
+    isUp: boolean;
+  };
+}
+
+export interface MarketTrendInfo {
+  trendPct: number;
+  isUp: boolean;
+  volume24h: number;
+  status: 'surging' | 'rising' | 'stable' | 'dipping' | 'crashing';
+  statusText: string;
+}
+
+export interface CS2RankInfo {
+  id: number;
+  name: string;
+  nameRu: string;
+  tier: 'silver' | 'nova' | 'guardian' | 'elite';
+  icon: string;
+  minElo: number;
+}
+
+export interface PremierRatingInfo {
+  rating: number;
+  color: string;
+  tierName: string;
+}
+
+export interface DailyCareReward {
+  day: number;
+  type: 'coins' | 'case' | 'capsule' | 'knife';
+  amount?: number;
+  caseId?: string;
+  label: string;
+  icon: string;
 }
 
 export type QuestDifficulty = 'daily' | 'hardcore' | 'collector' | 'battle';

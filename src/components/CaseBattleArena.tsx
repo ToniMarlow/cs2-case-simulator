@@ -1,7 +1,7 @@
+import { CatalogImage } from "./CatalogImage";
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -526,8 +526,8 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
                   },
                 ]}
               >
-                <Image
-                  source={{ uri: c.image }}
+                <CatalogImage
+                  image={c.image} label={c.name}
                   style={styles.caseSlotImg}
                   resizeMode="contain"
                 />
@@ -628,8 +628,8 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
                           },
                         ]}
                       >
-                        <Image
-                          source={{ uri: d.image }}
+                        <CatalogImage
+                          image={d.image} label={d.name}
                           style={styles.dropMiniImg}
                           resizeMode="contain"
                         />
@@ -693,8 +693,8 @@ export const CaseBattleArena: React.FC<CaseBattleArenaProps> = ({
                       },
                     ]}
                   >
-                    <Image
-                      source={{ uri: c.image }}
+                    <CatalogImage
+                      image={c.image} label={c.name}
                       style={{ width: 72, height: 54 }}
                       resizeMode="contain"
                     />

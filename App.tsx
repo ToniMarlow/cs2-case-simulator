@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { CatalogImage } from "./src/components/CatalogImage";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Image,
+  ActivityIndicator,
+  FlatList,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -69,21 +71,48 @@ import {
 } from './src/utils/soundManager';
 
 const STORAGE_KEY = '@cs2_liquid_glass_save_v3';
+const INTERFACE_VERSION = 1;
+
+const EMPTY_STATS = { opened: 0, spent: 0, dropValue: 0, saleRevenue: 0 };
+type OpeningStats = typeof EMPTY_STATS;
+type AccountWithStats = StoredAccountRecord & { openingStats?: OpeningStats };
+
+function readOpeningStats(saved: unknown): OpeningStats {
+  const stats = saved as Partial<OpeningStats> | null | undefined;
+  const numberOrZero = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+  return {
+    opened: Math.floor(numberOrZero(stats?.opened)),
+    spent: numberOrZero(stats?.spent),
+    dropValue: numberOrZero(stats?.dropValue),
+    saleRevenue: numberOrZero(stats?.saleRevenue),
+  };
+}
 
 type BottomNavTab = 'cases' | 'inventory' | 'minigames' | 'quests' | 'profile' | 'settings';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [balance, setBalance] = useState<number>(25.0);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventoryState] = useState<InventoryItem[]>([]);
+  const inventoryRef = useRef(inventory);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const openingInProgress = useRef(false);
+  const [savingOpening, setSavingOpening] = useState(false);
+  const [openingStats, setOpeningStats] = useState<OpeningStats>(EMPTY_STATS);
+  const setInventory = (update: React.SetStateAction<InventoryItem[]>) => {
+    // Sales must see removals immediately, even before React renders again.
+    const next = typeof update === 'function' ? update(inventoryRef.current) : update;
+    inventoryRef.current = next;
+    setInventoryState(next);
+  };
   const [quests, setQuests] = useState<QuestItem[]>(INITIAL_QUESTS);
   const [eloRating, setEloRating] = useState<number>(1000);
   const [streakDay, setStreakDay] = useState<number>(1);
   const [lastClaimDate, setLastClaimDate] = useState<string>('');
   const [dailyModalOpen, setDailyModalOpen] = useState<boolean>(false);
 
-  // Default to CS2 Panorama Matte Dark ('obsidian'), switchable to Clean Light ('bright')
-  const [themeMode, setThemeMode] = useState<ThemeMode>('obsidian');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('bright');
   const [soundOn, setSoundOn] = useState<boolean>(true);
   const [fastSpin, setFastSpin] = useState<boolean>(false);
   const [showLiveTicker, setShowLiveTicker] = useState<boolean>(false);
@@ -133,6 +162,7 @@ export default function App() {
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed.user) setUser(parsed.user);
+          setOpeningStats(readOpeningStats(parsed.openingStats));
           if (typeof parsed.balance === 'number') setBalance(parsed.balance);
           if (Array.isArray(parsed.inventory)) setInventory(parsed.inventory);
           if (Array.isArray(parsed.quests) && parsed.quests.length >= INITIAL_QUESTS.length) {
@@ -141,7 +171,9 @@ export default function App() {
           if (typeof parsed.eloRating === 'number') setEloRating(parsed.eloRating);
           if (typeof parsed.streakDay === 'number') setStreakDay(parsed.streakDay);
           if (typeof parsed.lastClaimDate === 'string') setLastClaimDate(parsed.lastClaimDate);
-          if (parsed.themeMode) setThemeMode(parsed.themeMode);
+          if (parsed.interfaceVersion === INTERFACE_VERSION && Object.prototype.hasOwnProperty.call(THEMES, parsed.themeMode)) {
+            setThemeMode(parsed.themeMode);
+          }
           if (typeof parsed.fastSpin === 'boolean') setFastSpin(parsed.fastSpin);
           if (typeof parsed.showLiveTicker === 'boolean') {
             setShowLiveTicker(parsed.showLiveTicker);
@@ -156,55 +188,47 @@ export default function App() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!isLoaded) return;
-    const payload = JSON.stringify({
-      user,
-      balance,
-      inventory,
-      quests,
-      eloRating,
-      streakDay,
-      lastClaimDate,
-      themeMode,
-      soundOn,
-      fastSpin,
-      showLiveTicker,
-    });
-    AsyncStorage.setItem(STORAGE_KEY, payload).catch(() => {});
+  const snapshot = {
+    interfaceVersion: INTERFACE_VERSION,
+    user, balance, inventory, quests, eloRating, streakDay, lastClaimDate,
+    themeMode, soundOn, fastSpin, showLiveTicker, openingStats,
+  };
 
-    if (user?.email) {
-      (async () => {
-        try {
-          const regRaw = await AsyncStorage.getItem(ACCOUNTS_REGISTRY_KEY);
-          const reg: Record<string, StoredAccountRecord> = regRaw ? JSON.parse(regRaw) : {};
-          reg[user.email.toLowerCase()] = {
-            profile: user,
-            balance,
-            inventory,
-            quests,
-            eloRating,
-            streakDay,
-            lastClaimDate,
-            updatedAt: Date.now(),
-          };
-          await AsyncStorage.setItem(ACCOUNTS_REGISTRY_KEY, JSON.stringify(reg));
-        } catch {}
-      })();
-    }
+  const queueSave = (next: typeof snapshot) => {
+    const write = saveQueue.current.then(async () => {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      if (!next.user?.email) return;
+      try {
+        const regRaw = await AsyncStorage.getItem(ACCOUNTS_REGISTRY_KEY);
+        const registry: Record<string, AccountWithStats> = regRaw ? JSON.parse(regRaw) : {};
+        registry[next.user.email.toLowerCase()] = {
+          profile: next.user,
+          balance: next.balance,
+          inventory: next.inventory,
+          quests: next.quests,
+          eloRating: next.eloRating,
+          streakDay: next.streakDay,
+          lastClaimDate: next.lastClaimDate,
+          openingStats: next.openingStats,
+          updatedAt: Date.now(),
+        };
+        await AsyncStorage.setItem(ACCOUNTS_REGISTRY_KEY, JSON.stringify(registry));
+      } catch {
+        showNotify('Ошибка сохранения профиля', 'Основной прогресс сохранён. Копия профиля обновится при следующем сохранении.', 'error');
+      }
+    });
+    saveQueue.current = write.catch(() => {});
+    return write;
+  };
+
+  useEffect(() => {
+    if (!isLoaded || openingInProgress.current) return;
+    queueSave(snapshot).catch(() => {
+      showNotify('Ошибка сохранения', 'Не удалось полностью сохранить прогресс.', 'error');
+    });
   }, [
-    user,
-    balance,
-    inventory,
-    quests,
-    eloRating,
-    streakDay,
-    lastClaimDate,
-    themeMode,
-    soundOn,
-    fastSpin,
-    showLiveTicker,
-    isLoaded,
+    user, balance, inventory, quests, eloRating, streakDay, lastClaimDate,
+    themeMode, soundOn, fastSpin, showLiveTicker, openingStats, isLoaded,
   ]);
 
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -234,39 +258,84 @@ export default function App() {
     );
   };
 
-  const handleTrySpendForCase = (totalCost: number, count: number): boolean => {
+  const handleOpenCases = async (
+    totalCost: number,
+    winners: InventoryItem[],
+    autoSold: InventoryItem[]
+  ): Promise<boolean> => {
+    if (openingInProgress.current) return false;
     if (balance < totalCost) {
-      showNotify(
-        'Недостаточно средств',
-        `Нужно $${totalCost.toFixed(2)} (ваш баланс $${balance.toFixed(2)}). Продайте скины или заработайте в Цехе.`,
-        'error'
-      );
+      showNotify('Недостаточно средств', `Нужно $${totalCost.toFixed(2)}.`, 'error');
       return false;
     }
-    setBalance((b) => Number((b - totalCost).toFixed(2)));
-    setEloRating((e) => e + count * 45);
-    incrementQuest('open_cases', count);
-    return true;
-  };
 
-  const handleCompleteDrops = (wonItems: InventoryItem[]) => {
-    setInventory((prev) => [...wonItems, ...prev]);
-    const rareCount = wonItems.filter(
-      (w) => w.rarity === 'covert' || w.rarity === 'gold'
-    ).length;
-    if (rareCount > 0) {
-      setEloRating((e) => e + rareCount * 350);
-      incrementQuest('get_covert', rareCount);
+    const soldIds = new Set(autoSold.map((item) => item.instanceId));
+    const kept = winners.filter((item) => !soldIds.has(item.instanceId));
+    const rareCount = kept.filter((item) => item.rarity === 'covert' || item.rarity === 'gold').length;
+    const saleRevenue = autoSold.reduce((sum, item) => sum + item.price, 0);
+    const dropValue = winners.reduce((sum, item) => sum + item.price, 0);
+    const questIncrements: Partial<Record<QuestItem['type'], number>> = {
+      open_cases: winners.length,
+      get_covert: rareCount,
+      sell_items: autoSold.length,
+    };
+    const next = {
+      ...snapshot,
+      balance: Number((balance - totalCost + saleRevenue).toFixed(2)),
+      inventory: kept.length ? [...kept, ...inventoryRef.current] : inventoryRef.current,
+      eloRating: eloRating + winners.length * 45 + rareCount * 350,
+      quests: quests.map((quest) => {
+        const increment = questIncrements[quest.type];
+        return increment
+          ? { ...quest, progress: Math.min(quest.target, quest.progress + increment) }
+          : quest;
+      }),
+      openingStats: {
+        opened: openingStats.opened + winners.length,
+        spent: Number((openingStats.spent + totalCost).toFixed(2)),
+        dropValue: Number((openingStats.dropValue + dropValue).toFixed(2)),
+        saleRevenue: Number((openingStats.saleRevenue + saleRevenue).toFixed(2)),
+      },
+    };
+
+    openingInProgress.current = true;
+    setSavingOpening(true);
+    try {
+      await queueSave(next);
+      setBalance(next.balance);
+      setInventory(next.inventory);
+      setQuests(next.quests);
+      setEloRating(next.eloRating);
+      setOpeningStats(next.openingStats);
+      return true;
+    } catch {
+      showNotify('Кейс не открыт', 'Не удалось сохранить результат. Попробуйте снова.', 'error');
+      return false;
+    } finally {
+      openingInProgress.current = false;
+      setSavingOpening(false);
     }
   };
 
-  const handleSellDrops = (itemsToSell: InventoryItem[]) => {
-    const ids = new Set(itemsToSell.map((i) => i.instanceId));
-    const sum = itemsToSell.reduce((acc, i) => acc + i.price, 0);
-    setInventory((prev) => prev.filter((i) => !ids.has(i.instanceId)));
-    setBalance((b) => Number((b + sum).toFixed(2)));
-    incrementQuest('sell_items', itemsToSell.length);
+  const creditSale = (items: InventoryItem[]) => {
+    const total = items.reduce((sum, item) => sum + item.price, 0);
+    setBalance((balance) => Number((balance + total).toFixed(2)));
+    incrementQuest('sell_items', items.length);
+    setOpeningStats((current) => ({
+      ...current,
+      saleRevenue: Number((current.saleRevenue + total).toFixed(2)),
+    }));
     playWinSound();
+    return total;
+  };
+
+  const sellInventoryItems = (items: InventoryItem[]) => {
+    const ids = new Set(items.map((item) => item.instanceId));
+    const toSell = inventoryRef.current.filter((item) => ids.has(item.instanceId) && !item.isLocked);
+    if (toSell.length === 0) return 0;
+    const soldIds = new Set(toSell.map((item) => item.instanceId));
+    setInventory((current) => current.filter((item) => !soldIds.has(item.instanceId)));
+    return creditSale(toSell);
   };
 
   const handleToggleLockItem = (instanceId: string) => {
@@ -293,14 +362,13 @@ export default function App() {
   };
 
   const handleSellItem = (item: InventoryItem) => {
-    if (item.isLocked) {
+    const current = inventoryRef.current.find((entry) => entry.instanceId === item.instanceId);
+    if (!current) return;
+    if (current.isLocked) {
       showNotify('Скин защищён замком 🔒', 'Снимите замок перед продажей.', 'warning');
       return;
     }
-    setInventory((prev) => prev.filter((i) => i.instanceId !== item.instanceId));
-    setBalance((b) => Number((b + item.price).toFixed(2)));
-    incrementQuest('sell_items', 1);
-    playWinSound();
+    sellInventoryItems([current]);
   };
 
   const handleApplyStickerToWeapon = (instanceId: string, sticker: InventoryItem, slot: number) => {
@@ -392,7 +460,7 @@ export default function App() {
   };
 
   const handleSellAllCheap = () => {
-    const cheap = inventory.filter(
+    const cheap = inventoryRef.current.filter(
       (i) => !i.isLocked && (i.rarity === 'milspec' || i.rarity === 'restricted')
     );
     if (cheap.length === 0) {
@@ -403,18 +471,13 @@ export default function App() {
       );
       return;
     }
-    const totalSum = cheap.reduce((acc, i) => acc + i.price, 0);
-    const cheapIds = new Set(cheap.map((i) => i.instanceId));
-    setInventory((prev) => prev.filter((i) => !cheapIds.has(i.instanceId)));
-    setBalance((b) => Number((b + totalSum).toFixed(2)));
-    incrementQuest('sell_items', cheap.length);
-    playWinSound();
+    const totalSum = sellInventoryItems(cheap);
     showNotify('Продано', `Продано ${cheap.length} предм. на +$${totalSum.toFixed(2)}`, 'success');
   };
 
   const handleSellEntireInventory = () => {
-    const toSell = inventory.filter((i) => !i.isLocked);
-    const lockedCount = inventory.length - toSell.length;
+    const toSell = inventoryRef.current.filter((i) => !i.isLocked);
+    const lockedCount = inventoryRef.current.length - toSell.length;
     if (toSell.length === 0) {
       if (lockedCount > 0) {
         showNotify('Все скины защищены замком 🔒', `У вас ${lockedCount} предметов под замком.`, 'warning');
@@ -423,11 +486,7 @@ export default function App() {
       }
       return;
     }
-    const totalSum = toSell.reduce((acc, i) => acc + i.price, 0);
-    setInventory((prev) => prev.filter((i) => i.isLocked));
-    setBalance((b) => Number((b + totalSum).toFixed(2)));
-    incrementQuest('sell_items', toSell.length);
-    playWinSound();
+    const totalSum = sellInventoryItems(toSell);
     showNotify(
       'Склад продан',
       `Продано ${toSell.length} предм. на сумму $${totalSum.toFixed(2)}${lockedCount > 0 ? ` (${lockedCount} под замком 🔒 сохранены)` : ''}`,
@@ -445,7 +504,16 @@ export default function App() {
     playWinSound();
   };
 
-  const theme = THEMES[themeMode] || THEMES.obsidian;
+  const theme = THEMES[themeMode] || THEMES.bright;
+
+  // Filter & Sort Inventory
+  const filteredInventory = useMemo(() => inventory
+    .filter((i) => (invFilter === 'all' ? true : i.rarity === invFilter))
+    .sort((a, b) => {
+      if (invSort === 'price_desc') return b.price - a.price;
+      if (invSort === 'price_asc') return a.price - b.price;
+      return b.obtainedAt - a.obtainedAt;
+    }), [inventory, invFilter, invSort]);
 
   if (!isLoaded) {
     return <View style={{ flex: 1, backgroundColor: theme.bgGradient[0] }} />;
@@ -468,15 +536,6 @@ export default function App() {
     if (casePriceSort === 'desc') return b.price - a.price;
     return 0;
   });
-
-  // Filter & Sort Inventory
-  const filteredInventory = [...inventory]
-    .filter((i) => (invFilter === 'all' ? true : i.rarity === invFilter))
-    .sort((a, b) => {
-      if (invSort === 'price_desc') return b.price - a.price;
-      if (invSort === 'price_asc') return a.price - b.price;
-      return b.obtainedAt - a.obtainedAt;
-    });
 
   const filteredQuests =
     questFilter === 'all' ? quests : quests.filter((q) => q.difficulty === questFilter);
@@ -517,7 +576,7 @@ export default function App() {
       : { flex: 1, width: '100%' };
 
   return (
-    <View style={[styles.desktopStage, { backgroundColor: theme.bgGradient[0] }]}>
+    <View style={[styles.desktopStage, { backgroundColor: theme.isLight ? '#E3E7DE' : theme.bgGradient[0] }]}>
       <StatusBar
         barStyle={theme.isLight ? 'dark-content' : 'light-content'}
         backgroundColor={theme.headerBg}
@@ -539,6 +598,7 @@ export default function App() {
           <AuthScreen
             onLoginSuccess={(profile, restoredData) => {
               setUser(profile);
+              setOpeningStats(readOpeningStats((restoredData as AccountWithStats | undefined)?.openingStats));
               if (restoredData) {
                 setBalance(restoredData.balance);
                 setInventory(restoredData.inventory);
@@ -565,15 +625,17 @@ export default function App() {
             >
               <TouchableOpacity
                 style={styles.profileChip}
+                accessibilityRole="button"
+                accessibilityLabel="Открыть профиль"
                 onPress={() => {
                   setOpenedCaseScreen(null);
                   setActiveTab('profile');
                 }}
               >
-                <View style={[styles.avatarBox, { borderColor: currentAvatar.color, borderWidth: 1.5 }]}>
+                <View style={[styles.avatarBox, { backgroundColor: theme.surfaceBg, borderColor: theme.cardBorder, borderWidth: 1 }]}>
                   {currentAvatar.image ? (
-                    <Image
-                      source={{ uri: currentAvatar.image }}
+                    <CatalogImage
+                      image={currentAvatar.image} label={currentAvatar.name}
                       style={styles.avatarImgSmall}
                       resizeMode="cover"
                     />
@@ -638,7 +700,8 @@ export default function App() {
                 </TouchableOpacity>
 
                 <View style={[styles.walletPill, { backgroundColor: theme.surfaceBg }]}>
-                  <Text allowFontScaling={false} style={styles.walletAmount}>${balance.toFixed(2)}</Text>
+                  <Text style={[styles.walletLabel, { color: theme.textSecondary }]}>Баланс</Text>
+                  <Text allowFontScaling={false} style={[styles.walletAmount, { color: theme.accent }]}>${balance.toFixed(2)}</Text>
                 </View>
               </View>
             </View>
@@ -673,186 +736,31 @@ export default function App() {
                   fastSpin={fastSpin}
                   onToggleFastSpin={() => setFastSpin((v) => !v)}
                   onBack={() => setOpenedCaseScreen(null)}
-                  onTrySpendBalance={handleTrySpendForCase}
-                  onCompleteDrops={handleCompleteDrops}
-                  onSellDrops={handleSellDrops}
-                  onAutoSellDrops={handleSellDrops}
+                  onOpenCases={handleOpenCases}
+                  onSellDrops={sellInventoryItems}
                   onInspectDrop={(won) => setInspectedSkin(won)}
                   onPreviewTemplate={handlePreviewTemplate}
                 />
-              ) : (
-                <ScrollView
+              ) : activeTab === 'inventory' ? (
+                <FlatList
                   style={{ flex: 1 }}
-                  contentContainerStyle={{ paddingBottom: 96 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
                   showsVerticalScrollIndicator={false}
-                >
-                  {/* ==================== TAB 1: CASES CATALOG ==================== */}
-                  {activeTab === 'cases' && (
+                  data={filteredInventory}
+                  numColumns={2}
+                  initialNumToRender={8}
+                  maxToRenderPerBatch={8}
+                  windowSize={5}
+                  columnWrapperStyle={styles.invGrid}
+                  keyExtractor={(item) => item.instanceId}
+                  ListHeaderComponent={
                     <View>
-                      {/* 4 Category Tabs */}
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.catalogTabsRow}
-                      >
-                        {[
-                          { key: 'all', title: 'Все кейсы' },
-                          { key: 'base_cases', title: 'Официальные CS2' },
-                          { key: 'black_market', title: 'Чёрный Рынок 🔥' },
-                          { key: 'capsules', title: 'Капсулы' },
-                          { key: 'souvenir', title: 'Сувенирные' },
-                        ].map((cat) => {
-                          const active = catalogCategory === cat.key;
-                          return (
-                            <TouchableOpacity
-                              key={cat.key}
-                              onPress={() => setCatalogCategory(cat.key as CatalogCategory | 'all')}
-                              style={[
-                                styles.catChip,
-                                {
-                                  backgroundColor: active ? '#16A34A' : theme.cardBg,
-                                  borderColor: theme.cardBorder,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.catChipText,
-                                  { color: active ? '#FFFFFF' : theme.textSecondary },
-                                ]}
-                              >
-                                {cat.title}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-
-                      {/* Search & Price Sort Row */}
-                      <View style={styles.searchSortRow}>
-                        <View
-                          style={[
-                            styles.searchBox,
-                            {
-                              backgroundColor: theme.cardBg,
-                              borderColor: theme.cardBorder,
-                            },
-                          ]}
-                        >
-                          <Ionicons name="search-outline" size={15} color={theme.textMuted} />
-                          <TextInput
-                            placeholder="Поиск кейса..."
-                            placeholderTextColor={theme.textMuted}
-                            value={caseSearchQuery}
-                            onChangeText={setCaseSearchQuery}
-                            style={[styles.searchInput, { color: theme.textPrimary }]}
-                          />
-                        </View>
-
-                        <TouchableOpacity
-                          onPress={() => {
-                            playClickSound();
-                            setCasePriceSort((prev) =>
-                              prev === 'default' ? 'asc' : prev === 'asc' ? 'desc' : 'default'
-                            );
-                          }}
-                          style={[
-                            styles.sortBtn,
-                            {
-                              backgroundColor: theme.cardBg,
-                              borderColor: theme.cardBorder,
-                            },
-                          ]}
-                        >
-                          <Ionicons name="swap-vertical-outline" size={14} color={theme.textSecondary} />
-                          <Text style={[styles.sortBtnText, { color: theme.textSecondary }]}>
-                            {casePriceSort === 'asc'
-                              ? 'Дешёвые'
-                              : casePriceSort === 'desc'
-                              ? 'Дорогие'
-                              : 'Цена'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Clean Minimalist 2-Column Case Grid (Clicking opens the CS2 Case Screen!) */}
-                      <View style={styles.bentoCaseGrid}>
-                        {filteredCases.map((caseObj) => (
-                          <TouchableOpacity
-                            key={caseObj.id}
-                            activeOpacity={0.85}
-                            onPress={() => {
-                              playClickSound();
-                              setOpenedCaseScreen(caseObj);
-                            }}
-                            style={[
-                              styles.caseCard,
-                              {
-                                backgroundColor: theme.cardBg,
-                                borderColor: theme.cardBorder,
-                              },
-                            ]}
-                          >
-                            <View style={styles.caseCardTopRow}>
-                              <Text style={[styles.caseItemCount, { color: theme.textMuted }]}>
-                                {caseObj.items.length} предм.
-                              </Text>
-                              <Text style={styles.casePriceBadge}>
-                                ${caseObj.price.toFixed(2)}
-                              </Text>
-                            </View>
-
-                            {caseObj.badgeTag && (
-                              <View
-                                style={[
-                                  styles.caseBadgeTag,
-                                  { backgroundColor: caseObj.accentColor || '#16A34A' },
-                                ]}
-                              >
-                                <Text style={styles.caseBadgeTagText}>{caseObj.badgeTag}</Text>
-                              </View>
-                            )}
-
-                            <View style={styles.caseImgWrap}>
-                              <Image
-                                source={{ uri: caseObj.image }}
-                                style={styles.caseImg}
-                                resizeMode="contain"
-                              />
-                            </View>
-
-                            <Text
-                              numberOfLines={1}
-                              style={[styles.caseTitle, { color: theme.textPrimary }]}
-                            >
-                              {caseObj.name.replace('Кейс ', '').replace('Капсула ', '')}
-                            </Text>
-                            <Text
-                              numberOfLines={1}
-                              style={[styles.caseSubtitle, { color: theme.textSecondary }]}
-                            >
-                              {caseObj.subtitle}
-                            </Text>
-
-                            <View style={[styles.caseDropRangeBox, { backgroundColor: theme.surfaceBg }]}>
-                              <Text style={[styles.caseDropRangeText, { color: theme.textSecondary }]}>
-                                Дроп: ${(caseObj.minPrice || 0.1).toFixed(2)} - ${(caseObj.maxPrice || 100).toFixed(0)}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* ==================== TAB 2: INVENTORY ==================== */}
-                  {activeTab === 'inventory' && (
-                    <View>
+                      <Text accessibilityRole="header" style={[styles.pageHeading, { color: theme.textPrimary }]}>Инвентарь</Text>
                       <LiquidGlassCard themeMode={themeMode} style={styles.invSummaryCard}>
                         <View style={styles.invSummaryRow}>
                           <View>
                             <Text style={[styles.invTotalLabel, { color: theme.textSecondary }]}>
-                              СКЛАД ({inventory.length} ПРЕДМ.)
+                              Предметов на складе: {inventory.length}
                             </Text>
                             <Text style={[styles.invTotalValue, { color: theme.textPrimary }]}>
                               ${totalInventoryValue.toFixed(2)}
@@ -865,11 +773,11 @@ export default function App() {
                               onPress={handleSellAllCheap}
                             >
                               <Text style={[styles.invActionBtnText, { color: theme.textPrimary }]}>
-                                Продать синьку
+                                Продать дешёвые
                               </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[styles.invActionBtn, { backgroundColor: '#16A34A' }]}
+                              style={[styles.invActionBtn, { backgroundColor: theme.accent }]}
                               onPress={handleSellEntireInventory}
                             >
                               <Text style={[styles.invActionBtnText, { color: '#FFFFFF' }]}>
@@ -893,7 +801,7 @@ export default function App() {
                                   style={[
                                     styles.filterChip,
                                     {
-                                      backgroundColor: active ? '#16A34A' : theme.surfaceBg,
+                                      backgroundColor: active ? theme.accent : theme.surfaceBg,
                                     },
                                   ]}
                                 >
@@ -933,28 +841,170 @@ export default function App() {
                           </TouchableOpacity>
                         </View>
                       </LiquidGlassCard>
-
-                      {filteredInventory.length === 0 ? (
+                    </View>
+                  }
+                  ListEmptyComponent={
                         <View style={styles.emptyBox}>
                           <Ionicons name="cube-outline" size={40} color={theme.textMuted} />
                           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                             На складе пока нет предметов
                           </Text>
                         </View>
-                      ) : (
-                        <View style={styles.invGrid}>
-                          {filteredInventory.map((item) => (
-                            <SkinCard
-                              key={item.instanceId}
-                              item={item}
-                              themeMode={themeMode}
-                              onPress={() => setInspectedSkin(item)}
-                              actionLabel={`Продать $${item.price.toFixed(2)}`}
-                              onAction={() => handleSellItem(item)}
-                            />
-                          ))}
+                  }
+                  renderItem={({ item }) => (
+                    <SkinCard
+                      item={item}
+                      themeMode={themeMode}
+                      onPress={() => setInspectedSkin(item)}
+                      actionLabel={`Продать $${item.price.toFixed(2)}`}
+                      onAction={() => handleSellItem(item)}
+                    />
+                  )}
+                />
+              ) : (
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {/* ==================== TAB 1: CASES CATALOG ==================== */}
+                  {activeTab === 'cases' && (
+                    <View>
+                      <Text accessibilityRole="header" style={[styles.pageHeading, { color: theme.textPrimary }]}>Каталог</Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.catalogTabsRow}
+                      >
+                        {[
+                          { key: 'all', title: 'Все кейсы' },
+                          { key: 'base_cases', title: 'Официальные' },
+                          { key: 'black_market', title: 'Чёрный рынок' },
+                          { key: 'capsules', title: 'Капсулы' },
+                          { key: 'souvenir', title: 'Сувенирные' },
+                        ].map((cat) => {
+                          const active = catalogCategory === cat.key;
+                          return (
+                            <TouchableOpacity
+                              key={cat.key}
+                              onPress={() => setCatalogCategory(cat.key as CatalogCategory | 'all')}
+                              style={[
+                                styles.catChip,
+                                {
+                                  backgroundColor: active ? theme.accent : theme.cardBg,
+                                  borderColor: theme.cardBorder,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.catChipText,
+                                  { color: active ? '#FFFFFF' : theme.textSecondary },
+                                ]}
+                              >
+                                {cat.title}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+
+                      {/* Search & Price Sort Row */}
+                      <View style={styles.searchSortRow}>
+                        <View
+                          style={[
+                            styles.searchBox,
+                            {
+                              backgroundColor: theme.cardBg,
+                              borderColor: theme.cardBorder,
+                            },
+                          ]}
+                        >
+                          <Ionicons name="search-outline" size={15} color={theme.textMuted} />
+                          <TextInput
+                            placeholder="Найти контейнер"
+                            accessibilityLabel="Поиск контейнера"
+                            placeholderTextColor={theme.textMuted}
+                            value={caseSearchQuery}
+                            onChangeText={setCaseSearchQuery}
+                            style={[styles.searchInput, { color: theme.textPrimary }]}
+                          />
                         </View>
-                      )}
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            playClickSound();
+                            setCasePriceSort((prev) =>
+                              prev === 'default' ? 'asc' : prev === 'asc' ? 'desc' : 'default'
+                            );
+                          }}
+                          style={[
+                            styles.sortBtn,
+                            {
+                              backgroundColor: theme.cardBg,
+                              borderColor: theme.cardBorder,
+                            },
+                          ]}
+                        >
+                          <Ionicons name="swap-vertical-outline" size={14} color={theme.textSecondary} />
+                          <Text style={[styles.sortBtnText, { color: theme.textSecondary }]}>
+                            {casePriceSort === 'asc'
+                              ? 'Дешёвые'
+                              : casePriceSort === 'desc'
+                              ? 'Дорогие'
+                              : 'Цена'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.bentoCaseGrid}>
+                        {filteredCases.map((caseObj) => (
+                          <TouchableOpacity
+                            key={caseObj.id}
+                            activeOpacity={0.85}
+                            onPress={() => {
+                              playClickSound();
+                              setOpenedCaseScreen(caseObj);
+                            }}
+                            style={[
+                              styles.caseCard,
+                              {
+                                backgroundColor: theme.cardBg,
+                                borderColor: theme.cardBorder,
+                              },
+                            ]}
+                            accessibilityRole="button"
+                          >
+                            <View style={[styles.caseImgWrap, { backgroundColor: theme.surfaceBg }]}>
+                              <CatalogImage
+                                image={caseObj.image}
+                                label={caseObj.name}
+                                style={styles.caseImg}
+                                resizeMode="contain"
+                              />
+                            </View>
+                            <View style={styles.caseDetails}>
+                              <Text numberOfLines={2} style={[styles.caseTitle, { color: theme.textPrimary }]}>
+                                {caseObj.name.replace('Кейс ', '').replace('Капсула ', '')}
+                              </Text>
+                              <Text numberOfLines={1} style={[styles.caseSubtitle, { color: theme.textSecondary }]}>
+                                {caseObj.items.length} предм. · {caseObj.subtitle}
+                              </Text>
+                              {caseObj.badgeTag && (
+                                <Text numberOfLines={1} style={[styles.caseTag, { color: theme.accent }]}>
+                                  {caseObj.badgeTag}
+                                </Text>
+                              )}
+                            </View>
+                            <View style={styles.casePriceColumn}>
+                              <Text style={[styles.casePriceBadge, { color: theme.accent }]}>
+                                ${caseObj.price.toFixed(2)}
+                              </Text>
+                              <Ionicons name="chevron-forward-outline" size={15} color={theme.textMuted} />
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                     </View>
                   )}
 
@@ -1105,8 +1155,8 @@ export default function App() {
                         <View style={styles.profileTopRow}>
                           <View style={[styles.avatarBoxLarge, { borderColor: currentAvatar.color, borderWidth: 2 }]}>
                             {currentAvatar.image ? (
-                              <Image
-                                source={{ uri: currentAvatar.image }}
+                              <CatalogImage
+                                image={currentAvatar.image} label={currentAvatar.name}
                                 style={styles.avatarImgLarge}
                                 resizeMode="cover"
                               />
@@ -1203,8 +1253,8 @@ export default function App() {
                                     active && { borderColor: av.color, borderWidth: 2 },
                                   ]}
                                 >
-                                  <Image
-                                    source={{ uri: av.image }}
+                                  <CatalogImage
+                                    image={av.image} label={av.name}
                                     style={styles.avatarPickerImg}
                                     resizeMode="cover"
                                   />
@@ -1264,6 +1314,23 @@ export default function App() {
                               Под замком 🔒
                             </Text>
                           </View>
+                        </View>
+
+                        <Text style={[styles.dailyCareTitle, { color: theme.textPrimary, marginTop: 12 }]}>
+                          Статистика кейсов и продаж
+                        </Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginVertical: 6 }}>
+                          {[
+                            ['Открыто кейсов', String(openingStats.opened)],
+                            ['Потрачено на кейсы', '$' + openingStats.spent.toFixed(2)],
+                            ['Стоимость дропа', '$' + openingStats.dropValue.toFixed(2)],
+                            ['Выручка от продаж', '$' + openingStats.saleRevenue.toFixed(2)],
+                          ].map(([label, value]) => (
+                            <View key={label} style={{ width: '50%', paddingVertical: 6 }}>
+                              <Text style={[styles.statVal, { color: theme.textPrimary }]}>{value}</Text>
+                              <Text style={[styles.statLbl, { color: theme.textSecondary }]}>{label}</Text>
+                            </View>
+                          ))}
                         </View>
 
                         {/* Daily Care Package Trigger */}
@@ -1460,6 +1527,7 @@ export default function App() {
                               return;
                             }
                             setUser(decoded.profile);
+                            setOpeningStats(readOpeningStats((decoded as AccountWithStats).openingStats));
                             setBalance(decoded.balance);
                             setInventory(decoded.inventory);
                             setEloRating(decoded.eloRating);
@@ -1476,17 +1544,14 @@ export default function App() {
               )}
             </View>
 
-            {/* FLOATING LIQUID GLASS BOTTOM NAVIGATION BAR */}
+            {/* Tab navigation */}
             <View
               style={[
                 styles.bottomBar,
+                activeTab === 'cases' && openedCaseScreen && { display: 'none' },
                 {
-                  backgroundColor: theme.isLight
-                    ? 'rgba(255, 255, 255, 0.88)'
-                    : 'rgba(16, 20, 30, 0.84)',
-                  borderColor: theme.isLight
-                    ? 'rgba(0, 0, 0, 0.08)'
-                    : 'rgba(255, 255, 255, 0.14)',
+                  backgroundColor: theme.tabBarBg,
+                  borderColor: theme.cardBorder,
                 },
               ]}
             >
@@ -1509,18 +1574,19 @@ export default function App() {
                       setActiveTab(item.key as BottomNavTab);
                     }}
                     style={styles.navItem}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={item.label}
                   >
-                    <Ionicons
-                      name={item.icon}
-                      size={20}
-                      color={active ? '#16A34A' : theme.textMuted}
-                    />
+                    <View style={[styles.navIcon, active && { backgroundColor: theme.surfaceBg }]}>
+                      <Ionicons name={item.icon} size={20} color={active ? theme.accent : theme.textMuted} />
+                    </View>
                     <Text
                       allowFontScaling={false}
                       numberOfLines={1}
                       style={[
                         styles.navLabel,
-                        { color: active ? '#16A34A' : theme.textMuted },
+                        { color: active ? theme.accent : theme.textMuted },
                       ]}
                     >
                       {item.label}
@@ -1575,11 +1641,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
   profileChip: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -1604,22 +1671,21 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   iconHeaderBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   walletPill: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 65,
+    alignItems: 'center',
   },
-  walletAmount: {
-    color: '#16A34A',
-    fontSize: 13,
-    fontWeight: '800',
-  },
+  walletLabel: { fontSize: 9, fontWeight: '600' },
+  walletAmount: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
   bankruptBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1643,109 +1709,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  mainContentWrap: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-  },
-  catalogTabsRow: {
-    marginBottom: 10,
-  },
-  catChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  catChipText: {
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  searchSortRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-  },
+  mainContentWrap: { flex: 1, paddingHorizontal: 18, paddingTop: 10 },
+  pageHeading: { fontSize: 34, lineHeight: 41, letterSpacing: -1.4, fontWeight: '800', marginTop: 8, marginBottom: 18 },
+  catalogTabsRow: { marginBottom: 14 },
+  catChip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22, borderWidth: 1, marginRight: 8 },
+  catChipText: { fontWeight: '700', fontSize: 12 },
+  searchSortRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   searchBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 36,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9,
+    paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, height: 45,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 12,
-    paddingVertical: 0,
-  },
+  searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
   sortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 36,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, height: 45,
   },
-  sortBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  bentoCaseGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
+  sortBtnText: { fontSize: 12, fontWeight: '700' },
+  bentoCaseGrid: { gap: 10 },
   caseCard: {
-    width: '48.4%',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    marginBottom: 10,
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18,
+    borderWidth: 1, padding: 10, minHeight: 100,
   },
-  caseCardTopRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  caseItemCount: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  casePriceBadge: {
-    color: '#16A34A',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  caseImgWrap: {
-    height: 92,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 6,
-  },
-  caseImg: {
-    width: 114,
-    height: 86,
-  },
-  caseTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  caseSubtitle: {
-    fontSize: 10,
-    marginTop: 2,
-    textAlign: 'center',
-  },
+  caseImgWrap: { width: 82, height: 78, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  caseImg: { width: 72, height: 67 },
+  caseDetails: { flex: 1, gap: 5 },
+  caseTitle: { fontSize: 15, fontWeight: '800', lineHeight: 18 },
+  caseSubtitle: { fontSize: 11, lineHeight: 14 },
+  caseTag: { fontSize: 10, fontWeight: '700' },
+  casePriceColumn: { alignItems: 'flex-end', gap: 8 },
+  casePriceBadge: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
   invSummaryCard: {
-    padding: 14,
-    marginBottom: 12,
+    padding: 15,
+    marginBottom: 16,
   },
   invSummaryRow: {
     flexDirection: 'row',
@@ -1757,7 +1752,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   invTotalValue: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: '900',
     marginTop: 2,
   },
@@ -1795,8 +1790,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   invGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
   emptyBox: {
@@ -1951,34 +1944,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   bottomBar: {
-    position: 'absolute',
-    bottom: 14,
-    left: 14,
-    right: 14,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1.2,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
+    minHeight: 64, borderTopWidth: 1, flexDirection: 'row',
+    alignItems: 'stretch', paddingHorizontal: 12, paddingVertical: 5,
   },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-  },
-  navLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 2,
-  },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  navIcon: { minWidth: 45, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  navLabel: { fontSize: 11, fontWeight: '700' },
   avatarBox: {
     width: 36,
     height: 36,
@@ -2020,31 +1991,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '900',
-  },
-  caseBadgeTag: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2.5,
-    borderRadius: 5,
-    zIndex: 2,
-  },
-  caseBadgeTagText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  caseDropRangeBox: {
-    marginTop: 6,
-    borderRadius: 6,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-  },
-  caseDropRangeText: {
-    fontSize: 9,
-    fontWeight: '700',
   },
   profileTopRow: {
     flexDirection: 'row',

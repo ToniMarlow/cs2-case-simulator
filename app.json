@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#050914"
+      "backgroundColor": "#E9EFE8"
     },
     "ios": {
       "supportsTablet": true,
@@ -17,8 +17,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#050914"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E9EFE8"
       },
       "package": "com.cs2casesimulator.app"
     }

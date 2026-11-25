@@ -1,8 +1,8 @@
+import { CatalogImage } from "./CatalogImage";
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -154,7 +154,7 @@ export const SkinInspectorModal: React.FC<SkinInspectorModalProps> = ({
                 },
               ]}
             >
-              <Image source={{ uri: item.image }} style={styles.heroModelImg} resizeMode="contain" />
+              <CatalogImage image={item.image} label={[item.weapon, item.name].join(" | ")} style={styles.heroModelImg} resizeMode="contain" />
             </Animated.View>
 
             {/* Applied Stickers on Weapon */}
@@ -162,7 +162,7 @@ export const SkinInspectorModal: React.FC<SkinInspectorModalProps> = ({
               <View style={styles.appliedStickersBar}>
                 {item.stickers.map((st, idx) => (
                   <View key={idx} style={styles.stickerSlot}>
-                    <Image source={{ uri: st.image }} style={styles.stickerImg} resizeMode="contain" />
+                    <CatalogImage image={st.image} label={st.name} style={styles.stickerImg} resizeMode="contain" />
                   </View>
                 ))}
               </View>
@@ -232,7 +232,7 @@ export const SkinInspectorModal: React.FC<SkinInspectorModalProps> = ({
                       playWinSound();
                     }}
                   >
-                    <Image source={{ uri: st.image }} style={styles.craftStickerIcon} resizeMode="contain" />
+                    <CatalogImage image={st.image} label={st.name} style={styles.craftStickerIcon} resizeMode="contain" />
                     <Text numberOfLines={1} style={styles.craftStickerName}>
                       + Клеить
                     </Text>

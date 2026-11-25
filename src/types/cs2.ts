@@ -29,7 +29,6 @@ export interface RarityInfo {
   name: string;
   color: string;
   glow: string;
-  chance: number; // Realistic tough CS2 odds
 }
 
 export const RARITIES: Record<RarityKey, RarityInfo> = {
@@ -38,35 +37,30 @@ export const RARITIES: Record<RarityKey, RarityInfo> = {
     name: 'Армейское качество',
     color: '#4B69FF',
     glow: 'rgba(75, 105, 255, 0.45)',
-    chance: 83.5, // Realistic tough Valve drop rate
   },
   restricted: {
     key: 'restricted',
     name: 'Запрещённое',
     color: '#8847FF',
     glow: 'rgba(136, 71, 255, 0.45)',
-    chance: 13.5,
   },
   classified: {
     key: 'classified',
     name: 'Засекреченное',
     color: '#D32CE6',
     glow: 'rgba(211, 44, 230, 0.45)',
-    chance: 2.35,
   },
   covert: {
     key: 'covert',
     name: 'Тайное',
     color: '#EB4B4B',
     glow: 'rgba(235, 75, 75, 0.5)',
-    chance: 0.45,
   },
   gold: {
     key: 'gold',
     name: 'Редкий особый предмет',
     color: '#FFD700',
     glow: 'rgba(255, 215, 0, 0.6)',
-    chance: 0.2,
   },
 };
 

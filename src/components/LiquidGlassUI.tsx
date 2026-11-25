@@ -1,6 +1,6 @@
+import { CatalogImage } from "./CatalogImage";
 import React, { memo, useState } from 'react';
 import {
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -54,20 +54,20 @@ export const THEMES: Record<ThemeMode, ThemePalette> = {
   },
   bright: {
     id: 'bright',
-    name: 'CS2 Clean Light (Светлый минимализм)',
-    subtitle: 'Чистый светлый интерфейс с белыми матовыми карточками',
-    bgGradient: ['#F3F4F6', '#F3F4F6', '#F3F4F6'],
-    headerBg: '#FFFFFF',
-    cardBg: '#FFFFFF',
-    skinCardBg: '#FFFFFF',
-    cardBorder: '#E5E7EB',
-    textPrimary: '#111827',
-    textSecondary: '#4B5563',
-    textMuted: '#9CA3AF',
-    accent: '#16A34A',
-    accentSecondary: '#D97706',
-    tabBarBg: '#FFFFFF',
-    surfaceBg: '#F9FAFB',
+    name: 'Светлая',
+    subtitle: 'Тёплый фон и прохладный зелёный акцент',
+    bgGradient: ['#F5F5EF', '#F5F5EF', '#F5F5EF'],
+    headerBg: '#F5F5EF',
+    cardBg: '#FFFEFA',
+    skinCardBg: '#FFFEFA',
+    cardBorder: '#DEDFD7',
+    textPrimary: '#182420',
+    textSecondary: '#4D5E57',
+    textMuted: '#64756C',
+    accent: '#215F52',
+    accentSecondary: '#946925',
+    tabBarBg: '#FFFEFA',
+    surfaceBg: '#E9EFE8',
     isLight: true,
   },
   cyber_blue: {
@@ -184,7 +184,6 @@ interface SkinCardProps {
 
 export const SkinCard: React.FC<SkinCardProps> = memo(
   ({ item, onPress, selected, actionLabel, onAction, compact, themeMode = 'obsidian' }) => {
-    const [imgError, setImgError] = useState(false);
     const rarityInfo = RARITIES[item.rarity as RarityKey] || RARITIES.milspec;
     const isInstance = 'instanceId' in item;
     const price = isInstance ? item.price : item.basePrice;
@@ -240,35 +239,25 @@ export const SkinCard: React.FC<SkinCardProps> = memo(
                 {Math.abs(item.marketTrend.trendPct)}%
               </Text>
             )}
-            <Text style={styles.priceTag}>${price.toFixed(2)}</Text>
+            <Text style={[styles.priceTag, { color: theme.accent }]}>${price.toFixed(2)}</Text>
           </View>
         </View>
 
         {/* Weapon Image */}
-        <View style={[styles.imageContainer, compact && { height: 68 }]}>
-          {!imgError && item.image ? (
-            <Image
-              source={{ uri: item.image }}
-              style={compact ? styles.skinImgCompact : styles.skinImg}
-              resizeMode="contain"
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <View style={styles.fallbackIcon}>
-              <MaterialCommunityIcons
-                name={item.rarity === 'gold' ? 'knife-military' : 'pistol'}
-                size={24}
-                color={rarityInfo.color}
-              />
-            </View>
-          )}
+        <View style={[styles.imageContainer, { backgroundColor: theme.surfaceBg }, compact && { height: 68 }]}>
+          <CatalogImage
+            image={item.image}
+            label={item.name}
+            style={compact ? styles.skinImgCompact : styles.skinImg}
+            resizeMode="contain"
+          />
 
           {isInstance && item.stickers && item.stickers.length > 0 && (
             <View style={styles.miniStickerRow}>
               {item.stickers.slice(0, 4).map((st, idx) => (
-                <Image
+                <CatalogImage
                   key={idx}
-                  source={{ uri: st.image }}
+                  image={st.image} label={st.name}
                   style={styles.miniStickerImg}
                   resizeMode="contain"
                 />
@@ -416,7 +405,7 @@ export const InspectSkinModal: React.FC<InspectSkinModalProps> = memo(
                   { backgroundColor: rarity.glow || 'rgba(255,255,255,0.06)' },
                 ]}
               />
-              <Image source={{ uri: item.image }} style={styles.inspectLargeImg} resizeMode="contain" />
+              <CatalogImage image={item.image} label={[item.weapon, item.name].join(" | ")} style={styles.inspectLargeImg} resizeMode="contain" />
             </View>
 
             {/* Float & Condition Scale */}
@@ -516,7 +505,7 @@ export const InspectSkinModal: React.FC<InspectSkinModalProps> = memo(
                     if (st) {
                       return (
                         <View key={slotIdx} style={[styles.stickerSlotItem, { backgroundColor: theme.cardBg }]}>
-                          <Image source={{ uri: st.image }} style={styles.stickerSlotImg} resizeMode="contain" />
+                          <CatalogImage image={st.image} label={st.name} style={styles.stickerSlotImg} resizeMode="contain" />
                           <Text numberOfLines={1} style={[styles.stickerSlotTitle, { color: theme.textPrimary }]}>
                             {st.name.replace(' | Copenhagen 2024', '').replace(' | Paris 2023', '')}
                           </Text>
@@ -594,7 +583,7 @@ export const InspectSkinModal: React.FC<InspectSkinModalProps> = memo(
                               { backgroundColor: theme.surfaceBg, borderColor: theme.cardBorder },
                             ]}
                           >
-                            <Image source={{ uri: st.image }} style={styles.pickerStickerImg} resizeMode="contain" />
+                            <CatalogImage image={st.image} label={st.name} style={styles.pickerStickerImg} resizeMode="contain" />
                             <Text numberOfLines={1} style={[styles.pickerStickerName, { color: theme.textPrimary }]}>
                               {st.name}
                             </Text>
@@ -736,9 +725,9 @@ const styles = StyleSheet.create({
   },
   skinCard: {
     width: '48.4%',
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 10,
+    padding: 12,
     marginBottom: 10,
     overflow: 'hidden',
     position: 'relative',
@@ -788,15 +777,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   imageContainer: {
-    height: 84,
+    height: 96,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 10,
     position: 'relative',
   },
   skinImg: {
     width: '92%',
-    height: 78,
+    height: 84,
   },
   skinImgCompact: {
     width: 108,

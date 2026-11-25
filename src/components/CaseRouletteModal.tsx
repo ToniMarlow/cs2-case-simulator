@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { CatalogImage, prepareCatalogImages } from "./CatalogImage";
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Dimensions,
+  useWindowDimensions,
   Easing,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -22,7 +22,7 @@ import {
   SkinTemplate,
   ThemeMode,
 } from '../types/cs2';
-import { rollSkinFromCase } from '../data/cs2Database';
+import { getCaseDropRates, rollSkinFromCase } from '../data/cs2Database';
 import {
   playCS2GoldFanfare,
   playCS2ItemLock,
@@ -32,8 +32,6 @@ import {
 } from '../utils/soundManager';
 import { SkinCard, THEMES } from './LiquidGlassUI';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const TRACK_WIDTH = Math.min(SCREEN_WIDTH - 20, 420);
 const CARD_WIDTH = 154;
 const CARD_MARGIN = 6;
 const ITEM_SPAN = CARD_WIDTH + CARD_MARGIN * 2;
@@ -63,10 +61,8 @@ interface CS2CaseScreenProps {
   fastSpin: boolean;
   onToggleFastSpin: () => void;
   onBack: () => void;
-  onTrySpendBalance: (cost: number, count: number) => boolean;
-  onCompleteDrops: (wonItems: InventoryItem[]) => void;
+  onOpenCases: (cost: number, winners: InventoryItem[], autoSold: InventoryItem[]) => Promise<boolean>;
   onSellDrops: (wonItems: InventoryItem[]) => void;
-  onAutoSellDrops?: (wonItems: InventoryItem[]) => void;
   onInspectDrop: (item: InventoryItem) => void;
   onPreviewTemplate: (skin: SkinTemplate, category: CatalogCategory) => void;
 }
@@ -78,20 +74,23 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   fastSpin,
   onToggleFastSpin,
   onBack,
-  onTrySpendBalance,
-  onCompleteDrops,
+  onOpenCases,
   onSellDrops,
-  onAutoSellDrops,
   onInspectDrop,
   onPreviewTemplate,
 }) => {
-  const theme = THEMES[themeMode] || THEMES.obsidian;
+  const theme = THEMES[themeMode] || THEMES.bright;
+  const { width: windowWidth } = useWindowDimensions();
+  const [stageWidth, setStageWidth] = useState(0);
+  const trackWidth = Math.max(1, Math.min((stageWidth || windowWidth - 40) - 26, 420));
 
   const [openCount, setOpenCount] = useState<number>(1);
   const [stageState, setStageState] = useState<'idle' | 'spinning' | 'result'>('idle');
   const [strips, setStrips] = useState<InventoryItem[][]>([]);
   const [wonSkins, setWonSkins] = useState<InventoryItem[]>([]);
   const [acceleratedThisSpin, setAcceleratedThisSpin] = useState<boolean>(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const caseScroll = useRef<ScrollView>(null);
   const [showGoldList, setShowGoldList] = useState<boolean>(false);
 
   // New Toggles
@@ -103,11 +102,9 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
 
   const autoOpenRef = useRef(false);
   const autoOpenTimerRef = useRef<any>(null);
-  const balanceRef = useRef(balance);
-
-  useEffect(() => {
-    balanceRef.current = balance;
-  }, [balance]);
+  const opening = useRef(false);
+  const mounted = useRef(false);
+  const unlockRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     autoOpenRef.current = autoOpen;
@@ -130,12 +127,18 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
+    mounted.current = true;
     return () => {
+      mounted.current = false;
       if (animRef.current) animRef.current.stop();
       if (autoOpenTimerRef.current) clearTimeout(autoOpenTimerRef.current);
       scrollAnims.forEach((a) => a.removeAllListeners());
     };
   }, []);
+
+  useLayoutEffect(() => {
+    caseScroll.current?.scrollTo({ y: 0, animated: false });
+  }, [stageState]);
 
   const shouldAutoSell = (item: InventoryItem) => {
     if (!autoSell) return false;
@@ -149,6 +152,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
 
   const finishOpening = (winners: InventoryItem[]) => {
     scrollAnims.forEach((a) => a.removeAllListeners());
+    opening.current = false;
     setStageState('result');
 
     const hasGold = winners.some((w) => w.rarity === 'gold');
@@ -161,77 +165,56 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
       playDropSound(hasUltraRare);
     }
 
-    const toSell = winners.filter(shouldAutoSell);
-    const toKeep = winners.filter((w) => !shouldAutoSell(w));
-
-    setAutoSoldItems(toSell);
-
-    if (toSell.length > 0) {
-      if (onAutoSellDrops) {
-        onAutoSellDrops(toSell);
-      } else {
-        onSellDrops(toSell);
-      }
-    }
-    if (toKeep.length > 0) {
-      onCompleteDrops(toKeep);
-    }
-
     // Auto-Open Next Case Trigger
     if (autoOpenRef.current) {
       const nextDelay = fastSpin ? 550 : 1600;
       autoOpenTimerRef.current = setTimeout(() => {
-        if (autoOpenRef.current) {
-          const totalCost = Number((caseItem.price * openCount).toFixed(2));
-          if (balanceRef.current >= totalCost) {
-            handleUnlockContainer();
-          } else {
-            setAutoOpen(false);
-          }
-        }
+        autoOpenTimerRef.current = null;
+        if (autoOpenRef.current) void unlockRef.current();
       }, nextDelay);
     }
   };
 
-  const handleUnlockContainer = () => {
-    if (stageState === 'spinning') return;
+  const handleUnlockContainer = async () => {
+    if (opening.current) return;
+    opening.current = true;
     const totalCost = Number((caseItem.price * openCount).toFixed(2));
-    const ok = onTrySpendBalance(totalCost, openCount);
-    if (!ok) {
+    const allStrips = Array.from({ length: openCount }, () =>
+      Array.from({ length: TOTAL_ITEMS }, () => rollSkinFromCase(caseItem))
+    );
+    const winners = allStrips.map((strip) => strip[WINNING_INDEX]);
+    const toSell = winners.filter(shouldAutoSell);
+    const saved = await onOpenCases(totalCost, winners, toSell);
+    if (!mounted.current) return;
+    if (!saved) {
+      opening.current = false;
       setAutoOpen(false);
       return;
     }
 
+    const priority = [...winners, ...allStrips.flatMap((strip) => strip.slice(0, 8))];
+    await prepareCatalogImages(priority.filter((item) => item.rarity !== 'gold').map((item) => item.image));
+    if (!mounted.current) return;
+
     setStageState('spinning');
     setAcceleratedThisSpin(fastSpin);
-    setAutoSoldItems([]);
+    setAutoSoldItems(toSell);
     lastTickIndex.current = -1;
-
-    const allStrips: InventoryItem[][] = [];
-    const winners: InventoryItem[] = [];
     const animations: Animated.CompositeAnimation[] = [];
 
-    const centerOffset = TRACK_WIDTH / 2 - ITEM_SPAN / 2;
+    const centerOffset = trackWidth / 2 - ITEM_SPAN / 2;
     const baseDuration = fastSpin ? 1650 : 4400;
     const cascadeDelay = fastSpin ? 70 : 160;
 
     for (let s = 0; s < openCount; s++) {
       scrollAnims[s].setValue(0);
-      const rowItems: InventoryItem[] = [];
-      for (let i = 0; i < TOTAL_ITEMS; i++) {
-        rowItems.push(rollSkinFromCase(caseItem));
-      }
-      const winner = rowItems[WINNING_INDEX];
-      allStrips.push(rowItems);
-      winners.push(winner);
-
       const jitter = (Math.random() - 0.5) * (CARD_WIDTH * 0.4);
       const targetTranslate = -(WINNING_INDEX * ITEM_SPAN - centerOffset + jitter);
       targetTranslatesRef.current[s] = targetTranslate;
 
       if (s === 0) {
         scrollAnims[0].addListener(({ value }) => {
-          const currentIdx = Math.floor((Math.abs(value) + TRACK_WIDTH / 2) / ITEM_SPAN);
+          const currentIdx = Math.floor((Math.abs(value) + trackWidth / 2) / ITEM_SPAN);
           if (
             currentIdx !== lastTickIndex.current &&
             currentIdx >= 0 &&
@@ -265,6 +248,10 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
     });
   };
 
+  useLayoutEffect(() => {
+    unlockRef.current = handleUnlockContainer;
+  });
+
   const handleSpeedUpActiveSpin = () => {
     onToggleFastSpin();
     if (stageState !== 'spinning' || wonSkins.length === 0 || acceleratedThisSpin) return;
@@ -290,6 +277,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
 
   const handleStopAutoOpen = () => {
     playClickSound();
+    autoOpenRef.current = false;
     setAutoOpen(false);
     if (autoOpenTimerRef.current) {
       clearTimeout(autoOpenTimerRef.current);
@@ -297,6 +285,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
     }
   };
 
+  const dropRates = getCaseDropRates(caseItem);
   const regularSkins = [...caseItem.items]
     .filter((s) => s.rarity !== 'gold')
     .sort((a, b) => RARITY_SORT_ORDER[a.rarity] - RARITY_SORT_ORDER[b.rarity]);
@@ -304,6 +293,9 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
   const goldSkins = [...caseItem.items].filter((s) => s.rarity === 'gold');
 
   const totalWonPrice = wonSkins.reduce((acc, s) => acc + s.price, 0);
+  const autoSoldIds = new Set(autoSoldItems.map((item) => item.instanceId));
+  const sellableWinners = wonSkins.filter((item) => !autoSoldIds.has(item.instanceId));
+  const sellableValue = sellableWinners.reduce((sum, item) => sum + item.price, 0);
   const totalOpenCost = Number((caseItem.price * openCount).toFixed(2));
   const isCompactMulti = openCount >= 3;
 
@@ -326,7 +318,9 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
             handleStopAutoOpen();
             onBack();
           }}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: theme.surfaceBg }]}
+          accessibilityRole="button"
+          accessibilityLabel="Назад к каталогу"
         >
           <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
@@ -349,19 +343,21 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
         </View>
 
         <View style={[styles.pricePill, { backgroundColor: theme.surfaceBg }]}>
-          <Text allowFontScaling={false} style={styles.pricePillText}>
+          <Text allowFontScaling={false} style={[styles.pricePillText, { color: theme.accent }]}>
             ${caseItem.price.toFixed(2)}
           </Text>
         </View>
       </View>
 
       <ScrollView
+        ref={caseScroll}
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 12, paddingBottom: 175 }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: stageState === 'idle' ? 172 : 24 }}
         showsVerticalScrollIndicator={false}
       >
         {/* ==================== UPPER CS2 STAGE (CASE / ROULETTE / RESULT) ==================== */}
         <View
+          onLayout={({ nativeEvent }) => setStageWidth(nativeEvent.layout.width)}
           style={[
             styles.stageContainer,
             {
@@ -371,39 +367,37 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
           ]}
         >
           {stageState === 'idle' && (
-            <View style={styles.idleStageBox}>
-              <Image
-                source={{ uri: caseItem.image }}
+            <View style={[styles.idleStageBox, { backgroundColor: theme.surfaceBg }]}>
+              <CatalogImage
+                image={caseItem.image} label={caseItem.name}
                 style={styles.heroCaseImage}
                 resizeMode="contain"
               />
-              <Text
-                allowFontScaling={false}
-                style={[styles.idleHintText, { color: theme.textSecondary }]}
-              >
-                Нажмите «Разблокировать контейнер» снизу для открытия
-              </Text>
             </View>
           )}
 
           {stageState === 'spinning' && (
             <View style={styles.spinningStageBox}>
+              <Text accessibilityRole="header" style={[styles.stageTitle, { color: theme.textPrimary }]}>
+                Открываем кейс…
+              </Text>
               {strips.map((strip, sIdx) => (
                 <View
                   key={sIdx}
                   style={[
                     styles.trackContainer,
+                    { width: trackWidth },
                     isCompactMulti && styles.trackContainerCompact,
                     {
-                      backgroundColor: theme.isLight ? '#F3F4F6' : '#11141C',
+                      backgroundColor: theme.surfaceBg,
                       borderColor: theme.cardBorder,
                     },
                   ]}
                 >
-                  {/* Center CS2 Vertical Marker & Golden Pointers */}
-                  <View style={styles.centerMarkerLine} />
-                  <View style={styles.topPointer} />
-                  <View style={styles.bottomPointer} />
+                  {/* The result stops under this marker. */}
+                  <View style={[styles.centerMarkerLine, { left: trackWidth / 2 - 1.5, backgroundColor: theme.accent }]} />
+                  <View style={[styles.topPointer, { left: trackWidth / 2 - 7, borderTopColor: theme.accent }]} />
+                  <View style={[styles.bottomPointer, { left: trackWidth / 2 - 7, borderBottomColor: theme.accent }]} />
 
                   <Animated.View
                     style={[
@@ -434,8 +428,8 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                               <Text style={styles.goldMysteryLabel}>RARE SPECIAL</Text>
                             </View>
                           ) : (
-                            <Image
-                              source={{ uri: item.image }}
+                            <CatalogImage
+                              image={item.image} label={[item.weapon, item.name].join(" | ")}
                               style={
                                 isCompactMulti
                                   ? styles.rouletteImgCompact
@@ -472,6 +466,9 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
 
           {stageState === 'result' && wonSkins.length > 0 && (
             <View style={styles.resultStageBox}>
+              <Text accessibilityRole="header" style={[styles.stageTitle, { color: theme.textPrimary }]}>
+                {wonSkins.length === 1 ? 'Ваш дроп' : 'Итоги открытия'}
+              </Text>
               <Text
                 allowFontScaling={false}
                 style={[styles.resultHeaderLabel, { color: theme.textSecondary }]}
@@ -517,11 +514,16 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                     </View>
                   </View>
 
-                  <Image
-                    source={{ uri: wonSkins[0].image }}
-                    style={styles.singleDropImg}
-                    resizeMode="contain"
-                  />
+                  <View style={[styles.resultArtwork, {
+                    backgroundColor: theme.surfaceBg,
+                    borderBottomColor: RARITIES[wonSkins[0].rarity].color,
+                  }]}>
+                    <CatalogImage
+                      image={wonSkins[0].image} label={wonSkins[0].name}
+                      style={styles.singleDropImg}
+                      resizeMode="contain"
+                    />
+                  </View>
 
                   <Text
                     allowFontScaling={false}
@@ -538,7 +540,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                       Float: {wonSkins[0].floatValue.toFixed(6)}
                     </Text>
                   )}
-                  <Text allowFontScaling={false} style={styles.singleDropPrice}>
+                  <Text style={[styles.singleDropPrice, { color: theme.accent }]}>
                     ${wonSkins[0].price.toFixed(2)}
                   </Text>
                 </View>
@@ -559,8 +561,8 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                           },
                         ]}
                       >
-                        <Image
-                          source={{ uri: skin.image }}
+                        <CatalogImage
+                          image={skin.image} label={skin.name}
                           style={styles.multiDropImg}
                           resizeMode="contain"
                         />
@@ -607,7 +609,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                     allowFontScaling={false}
                     style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}
                   >
-                    В СКЛАД
+                    {sellableWinners.length ? 'Оставить' : 'Готово'}
                   </Text>
                 </TouchableOpacity>
 
@@ -620,29 +622,70 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                       allowFontScaling={false}
                       style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}
                     >
-                      3D ОСМОТР
+                      Осмотреть
                     </Text>
                   </TouchableOpacity>
                 )}
 
-                <TouchableOpacity
-                  style={styles.resultSellBtn}
-                  onPress={() => {
-                    handleStopAutoOpen();
-                    onSellDrops(wonSkins);
-                    setStageState('idle');
-                  }}
-                >
-                  <Text allowFontScaling={false} style={styles.resultSellBtnText}>
-                    ПРОДАТЬ (${totalWonPrice.toFixed(2)})
-                  </Text>
-                </TouchableOpacity>
+                {sellableWinners.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.resultSellBtn, { backgroundColor: theme.accent }]}
+                    onPress={() => {
+                      handleStopAutoOpen();
+                      onSellDrops(sellableWinners);
+                      setStageState('idle');
+                    }}
+                  >
+                    <Text allowFontScaling={false} style={styles.resultSellBtnText}>
+                      Продать ${sellableValue.toFixed(2)}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={balance < totalOpenCost || autoOpen}
+                style={[styles.repeatButton, {
+                  backgroundColor: theme.accent,
+                  opacity: balance < totalOpenCost || autoOpen ? 0.5 : 1,
+                }]}
+                onPress={() => { void handleUnlockContainer(); }}
+              >
+                <Text style={styles.cs2GreenUnlockText}>Открыть ещё · ${totalOpenCost.toFixed(2)}</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
 
+        {stageState === 'idle' && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            aria-expanded={showDetails}
+            onPress={() => setShowDetails((visible) => !visible)}
+            style={[styles.detailsToggle, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+          >
+            <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>Шансы и содержимое</Text>
+            <Ionicons name={showDetails ? 'chevron-up' : 'chevron-down'} size={18} color={theme.textSecondary} />
+          </TouchableOpacity>
+        )}
+        {stageState === 'idle' && showDetails && <>
         {/* ==================== CASE CONTENTS GRID (КАК В CS2) ==================== */}
+        <View style={[styles.oddsCard, { backgroundColor: theme.surfaceBg, borderColor: theme.cardBorder }]}>
+          <Text style={[styles.contentsTitle, { color: theme.textPrimary }]}>Шансы за один кейс</Text>
+          {dropRates.map(({ rarity, probability }) => (
+            <View key={rarity} style={styles.oddsRow}>
+              <View style={[styles.oddsDot, { backgroundColor: RARITIES[rarity].color }]} />
+              <Text style={[styles.oddsLabel, { color: theme.textSecondary }]}>
+                {RARITIES[rarity].name}
+              </Text>
+              <Text style={[styles.oddsValue, { color: theme.textPrimary }]}>
+                {probability < 0.0001
+                  ? '< 0,01%'
+                  : (probability * 100).toFixed(2).replace(/\.?0+$/, '').replace('.', ',') + '%'}
+              </Text>
+            </View>
+          ))}
+        </View>
         <View style={styles.contentsHeaderRow}>
           <Text
             allowFontScaling={false}
@@ -723,10 +766,28 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
             ))
           )}
         </View>
+        </>}
       </ScrollView>
 
+        {stageState !== 'idle' && (autoOpen || (stageState === 'spinning' && !acceleratedThisSpin)) && (
+          <View style={styles.stageTools}>
+            {stageState === 'spinning' && !acceleratedThisSpin && (
+              <TouchableOpacity accessibilityRole="button" onPress={handleSpeedUpActiveSpin}
+                style={[styles.resultSecondaryBtn, { backgroundColor: theme.surfaceBg }]}>
+                <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>Ускорить</Text>
+              </TouchableOpacity>
+            )}
+            {autoOpen && (
+              <TouchableOpacity accessibilityRole="button" onPress={handleStopAutoOpen}
+                style={[styles.resultSecondaryBtn, { backgroundColor: theme.surfaceBg }]}>
+                <Text style={[styles.resultSecondaryBtnText, { color: theme.textPrimary }]}>Стоп автооткрытие</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
       {/* ==================== STICKY BOTTOM CS2 UNLOCK BAR ==================== */}
-      <View
+      {stageState === 'idle' && <View
         style={[
           styles.bottomUnlockBar,
           {
@@ -743,7 +804,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
               return (
                 <TouchableOpacity
                   key={cnt}
-                  disabled={stageState === 'spinning' || autoOpen}
+                  disabled={autoOpen}
                   onPress={() => {
                     playClickSound();
                     setOpenCount(cnt);
@@ -751,7 +812,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                   style={[
                     styles.countPill,
                     {
-                      backgroundColor: active ? '#16A34A' : theme.surfaceBg,
+                      backgroundColor: active ? theme.accent : theme.surfaceBg,
                     },
                   ]}
                 >
@@ -774,20 +835,20 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
             style={[
               styles.fastPillBtn,
               {
-                backgroundColor: fastSpin ? '#EAB308' : theme.surfaceBg,
+                backgroundColor: fastSpin ? theme.accent : theme.surfaceBg,
               },
             ]}
           >
             <Ionicons
               name="flash"
               size={13}
-              color={fastSpin ? '#111827' : theme.textSecondary}
+              color={fastSpin ? '#FFFFFF' : theme.textSecondary}
             />
             <Text
               allowFontScaling={false}
               style={[
                 styles.fastPillText,
-                { color: fastSpin ? '#111827' : theme.textSecondary },
+                { color: fastSpin ? '#FFFFFF' : theme.textSecondary },
               ]}
             >
               Быстро
@@ -804,10 +865,9 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
               if (autoOpen) {
                 handleStopAutoOpen();
               } else {
+                autoOpenRef.current = true;
                 setAutoOpen(true);
-                if (stageState === 'idle') {
-                  handleUnlockContainer();
-                }
+                void handleUnlockContainer();
               }
             }}
             style={[
@@ -837,6 +897,8 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
           {/* 2. Авто-продажа тумблер + настройка качества */}
           <View style={styles.autoSellGroup}>
             <TouchableOpacity
+              accessibilityRole="switch"
+              aria-checked={autoSell}
               onPress={() => {
                 playClickSound();
                 setAutoSell((v) => !v);
@@ -863,11 +925,13 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                   { color: autoSell ? '#FFFFFF' : theme.textPrimary },
                 ]}
               >
-                Авто-продажа: {autoSell ? 'ВКЛ' : 'ВЫКЛ'}
+                Автопродажа
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={"Настроить автопродажу: " + currentThresholdObj.label}
               onPress={() => {
                 playClickSound();
                 setAutoSellModalOpen(true);
@@ -880,13 +944,7 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
                 },
               ]}
             >
-              <Text
-                allowFontScaling={false}
-                style={[styles.gearThresholdLabel, { color: currentThresholdObj.color }]}
-              >
-                {currentThresholdObj.label.split(' ')[0]}
-              </Text>
-              <Ionicons name="options-outline" size={13} color={theme.textSecondary} />
+              <Ionicons name="options-outline" size={17} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -904,21 +962,18 @@ export const CS2CaseScreen: React.FC<CS2CaseScreenProps> = ({
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            disabled={stageState === 'spinning'}
             onPress={handleUnlockContainer}
             style={[
               styles.cs2GreenUnlockBtn,
-              stageState === 'spinning' && { opacity: 0.6 },
+              { backgroundColor: theme.accent },
             ]}
           >
             <Text allowFontScaling={false} style={styles.cs2GreenUnlockText}>
-              {stageState === 'spinning'
-                ? 'ОТКРЫВАЕМ КОНТЕЙНЕР...'
-                : `РАЗБЛОКИРОВАТЬ (x${openCount}) • $${totalOpenCost.toFixed(2)}`}
+              {`ОТКРЫТЬ (x${openCount}) • $${totalOpenCost.toFixed(2)}`}
             </Text>
           </TouchableOpacity>
         )}
-      </View>
+      </View>}
 
       {/* ==================== AUTO-SELL THRESHOLD MODAL ==================== */}
       <Modal
@@ -1024,10 +1079,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   backBtn: {
-    padding: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   caseHeaderTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: '800',
   },
   caseHeaderSub: {
@@ -1045,7 +1104,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   stageContainer: {
-    borderRadius: 14,
+    borderRadius: 22,
     borderWidth: 1,
     padding: 12,
     marginBottom: 14,
@@ -1054,25 +1113,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   idleStageBox: {
+    width: '100%',
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    minHeight: 198,
+    borderRadius: 16,
   },
   heroCaseImage: {
     width: 250,
     height: 185,
-  },
-  idleHintText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 10,
-    textAlign: 'center',
   },
   spinningStageBox: {
     width: '100%',
     alignItems: 'center',
   },
   trackContainer: {
-    width: TRACK_WIDTH,
     height: 184,
     borderRadius: 12,
     borderWidth: 1.5,
@@ -1087,21 +1142,15 @@ const styles = StyleSheet.create({
   },
   centerMarkerLine: {
     position: 'absolute',
-    left: TRACK_WIDTH / 2 - 1.5,
     top: 0,
     bottom: 0,
     width: 3,
     backgroundColor: '#EAB308',
     zIndex: 20,
-    shadowColor: '#EAB308',
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 8,
   },
   topPointer: {
     position: 'absolute',
     top: 0,
-    left: TRACK_WIDTH / 2 - 7,
     width: 0,
     height: 0,
     borderLeftWidth: 7,
@@ -1115,7 +1164,6 @@ const styles = StyleSheet.create({
   bottomPointer: {
     position: 'absolute',
     bottom: 0,
-    left: TRACK_WIDTH / 2 - 7,
     width: 0,
     height: 0,
     borderLeftWidth: 7,
@@ -1186,6 +1234,19 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
+  stageTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.4, marginBottom: 12, textAlign: 'center' },
+  stageTools: { flexDirection: 'row', gap: 8, paddingVertical: 8 },
+  detailsToggle: {
+    minHeight: 49, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  resultArtwork: {
+    width: '100%', borderRadius: 16, borderBottomWidth: 4,
+    alignItems: 'center', justifyContent: 'center', marginVertical: 12, minHeight: 174,
+  },
+  repeatButton: {
+    width: '100%', minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 14,
+  },
   resultHeaderLabel: {
     fontSize: 11,
     fontWeight: '800',
@@ -1214,6 +1275,8 @@ const styles = StyleSheet.create({
   },
   singleDropBadges: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 6,
     marginBottom: 6,
   },
@@ -1324,6 +1387,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  oddsCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  oddsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  oddsDot: { width: 7, height: 7, borderRadius: 4 },
+  oddsLabel: { flex: 1, fontSize: 12 },
+  oddsValue: { fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
   contentsHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1458,20 +1537,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
-  gearThresholdLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
   cs2GreenUnlockBtn: {
-    backgroundColor: '#16A34A',
-    height: 46,
-    borderRadius: 12,
+    height: 50,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#16A34A',
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
   },
   cs2GreenUnlockText: {
     color: '#FFFFFF',

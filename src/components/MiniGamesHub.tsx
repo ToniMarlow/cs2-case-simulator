@@ -1,8 +1,8 @@
+import { CatalogImage } from "./CatalogImage";
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -754,8 +754,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
             >
               <View style={[styles.lobbyImgBox, { backgroundColor: theme.surfaceBg }]}>
                 {card.previewImg ? (
-                  <Image
-                    source={{ uri: card.previewImg }}
+                  <CatalogImage
+                    image={card.previewImg} label={card.title}
                     style={styles.lobbyWideImg}
                     resizeMode="contain"
                   />
@@ -1148,8 +1148,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
               </Text>
               {selectedUpgradeSkin ? (
                 <>
-                  <Image
-                    source={{ uri: selectedUpgradeSkin.image }}
+                  <CatalogImage
+                    image={selectedUpgradeSkin.image} label={selectedUpgradeSkin.name}
                     style={{ width: 84, height: 56, marginVertical: 4 }}
                     resizeMode="contain"
                   />
@@ -1434,8 +1434,8 @@ export const MiniGamesHub: React.FC<MiniGamesHubProps> = ({
                   ]}
                 >
                   {slotItem ? (
-                    <Image
-                      source={{ uri: slotItem.image }}
+                    <CatalogImage
+                      image={slotItem.image} label={slotItem.name}
                       style={{ width: 48, height: 36 }}
                       resizeMode="contain"
                     />
